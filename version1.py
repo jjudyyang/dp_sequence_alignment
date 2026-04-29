@@ -42,7 +42,7 @@ MISMATCH_SCORE = -10
 GAP_SCORE = -1
 
 # Highlight unmatched rows orange
-UNMATCHED_FILL = PatternFill(fill_type="solid", fgColor="FFA500")
+UNMATCHED_FILL = PatternFill(fill_type="solid", fgColor="FFD4A8")
 
 
 # =========================

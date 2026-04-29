@@ -3,3 +3,9 @@ venv/
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# Web app temp files (keep folders via .gitkeep)
+uploads/*
+!uploads/.gitkeep
+outputs/*
+!outputs/.gitkeep
