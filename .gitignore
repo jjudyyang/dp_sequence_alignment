@@ -4,6 +4,9 @@ __pycache__/
 *.py[cod]
 .DS_Store
 
+# Root-level spreadsheets (keep repo root to app trio + tooling)
+/*.xlsx
+
 # Web app temp files (keep folders via .gitkeep)
 uploads/*
 !uploads/.gitkeep
