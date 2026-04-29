@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shift Algorithm</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 24px auto;
+        padding: 0 12px;
+      }
+      form {
+        display: grid;
+        gap: 12px;
+      }
+      label {
+        display: grid;
+        gap: 6px;
+        font-weight: 600;
+      }
+      input, button {
+        padding: 10px;
+        font-size: 14px;
+      }
+      .row {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 1fr 1fr;
+      }
+      .hint {
+        color: #444;
+        font-size: 13px;
+      }
+      h2 {
+        margin: 8px 0 0;
+        font-size: 1rem;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Shift Algorithm</h1>
+    <p class="hint">
+      The DP compares <strong>one number column per series</strong> (compare column), within each series&#39;s
+      <strong>row range</strong>. Horizontal <strong>column spans</strong> describe which contiguous columns belong to
+      that series — on a matched row, all cells in the first-series span copy from that series&#39;s source row index,
+      and all cells in the second-series span copy from the other series&#39;s row. Other columns fill from the
+      anchored (&quot;later&quot;) row. The two spans must not overlap in Excel columns.
+    </p>
+
+    <form method="post" action="/process" enctype="multipart/form-data">
+      <label>
+        Excel file (.xlsx)
+        <input type="file" name="upload" accept=".xlsx" required />
+      </label>
+
+      <div class="row">
+        <label>
+          Sheet name
+          <input type="text" name="sheet_name" value="prompt 1" required />
+        </label>
+        <label>
+          Threshold
+          <input type="number" name="threshold" value="0.5" step="0.001" required />
+        </label>
+      </div>
+
+      <h2>First series</h2>
+      <div class="row">
+        <label>
+          Compare column (DP numeric; must sit inside span below)
+          <input type="text" name="first_series_compare_col" placeholder="e.g. A" value="A" required />
+        </label>
+      </div>
+      <div class="row">
+        <label>
+          First series columns — start (Excel letter)
+          <input type="text" name="first_series_col_from" placeholder="A" value="A" required maxlength="10" />
+        </label>
+        <label>
+          First series columns — end (Excel letter)
+          <input type="text" name="first_series_col_to" placeholder="A" value="A" required maxlength="10" />
+        </label>
+      </div>
+      <div class="row">
+        <label>
+          First series rows — start (vertical range for this series&#39;s data)
+          <input type="number" name="first_series_row_start" value="2" min="1" required />
+        </label>
+        <label>
+          First series rows — end (inclusive)
+          <input type="number" name="first_series_row_end" value="1000" min="1" required />
+        </label>
+      </div>
+
+      <h2>Second series</h2>
+      <div class="row">
+        <label>
+          Compare column (DP numeric; must sit inside span below)
+          <input type="text" name="second_series_compare_col" placeholder="e.g. B" value="B" required />
+        </label>
+      </div>
+      <div class="row">
+        <label>
+          Second series columns — start (Excel letter)
+          <input type="text" name="second_series_col_from" placeholder="B" value="B" required maxlength="10" />
+        </label>
+        <label>
+          Second series columns — end (Excel letter)
+          <input type="text" name="second_series_col_to" placeholder="B" value="B" required maxlength="10" />
+        </label>
+      </div>
+      <div class="row">
+        <label>
+          Second series rows — start
+          <input type="number" name="second_series_row_start" value="2" min="1" required />
+        </label>
+        <label>
+          Second series rows — end (inclusive)
+          <input type="number" name="second_series_row_end" value="1000" min="1" required />
+        </label>
+      </div>
+
+      <button type="submit">Process and download shifted copy</button>
+    </form>
+  </body>
+</html>
