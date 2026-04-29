@@ -12,8 +12,6 @@ from openpyxl.utils import column_index_from_string
 INPUT_FILE = "input.xlsx"
 OUTPUT_FILE = "output.xlsx"
 
-# Change this if your actual Excel tab name is different.
-# Example: "original data" or "sheet1"
 INPUT_SHEET_NAME = "sheet1"
 
 OUTPUT_SHEET_NAME = "sheet 1 aligned result"
@@ -35,6 +33,8 @@ RIGHT_OUTPUT_START_COL = "F"
 
 # Matching rule
 THRESHOLD = 0.5
+
+
 
 # DP scoring
 MATCH_SCORE = 2
@@ -375,10 +375,61 @@ def write_alignment(src_ws, out_ws, alignment):
 
 
 # =========================
-# Main
+# Web-App Wrapper / Main
 # =========================
 
-def main():
+def process_excel(
+    input_file,
+    output_file,
+    input_sheet_name="sheet1",
+    output_sheet_name="sheet 1 aligned result",
+    start_row=2,
+    header_row=1,
+    left_input_col="D",
+    left_block_start_col="A",
+    left_block_end_col="D",
+    left_output_start_col="A",
+    right_input_col="F",
+    right_block_start_col="F",
+    right_block_end_col="H",
+    right_output_start_col="F",
+    threshold=0.5,
+):
+    """
+    Main processing function.
+
+    This is what the web app will call.
+    It takes user-entered settings instead of relying only on hardcoded values.
+    """
+
+    global INPUT_FILE, OUTPUT_FILE
+    global INPUT_SHEET_NAME, OUTPUT_SHEET_NAME
+    global START_ROW, HEADER_ROW
+    global LEFT_INPUT_COL, LEFT_BLOCK_START_COL, LEFT_BLOCK_END_COL, LEFT_OUTPUT_START_COL
+    global RIGHT_INPUT_COL, RIGHT_BLOCK_START_COL, RIGHT_BLOCK_END_COL, RIGHT_OUTPUT_START_COL
+    global THRESHOLD
+
+    INPUT_FILE = input_file
+    OUTPUT_FILE = output_file
+
+    INPUT_SHEET_NAME = input_sheet_name
+    OUTPUT_SHEET_NAME = output_sheet_name
+
+    START_ROW = int(start_row)
+    HEADER_ROW = int(header_row)
+
+    LEFT_INPUT_COL = left_input_col.upper()
+    LEFT_BLOCK_START_COL = left_block_start_col.upper()
+    LEFT_BLOCK_END_COL = left_block_end_col.upper()
+    LEFT_OUTPUT_START_COL = left_output_start_col.upper()
+
+    RIGHT_INPUT_COL = right_input_col.upper()
+    RIGHT_BLOCK_START_COL = right_block_start_col.upper()
+    RIGHT_BLOCK_END_COL = right_block_end_col.upper()
+    RIGHT_OUTPUT_START_COL = right_output_start_col.upper()
+
+    THRESHOLD = float(threshold)
+
     wb = load_workbook(INPUT_FILE)
 
     if INPUT_SHEET_NAME in wb.sheetnames:
@@ -398,13 +449,50 @@ def main():
 
     wb.save(OUTPUT_FILE)
 
-    print("Done:", OUTPUT_FILE)
-    print("Input sheet:", src_ws.title)
-    print("Output sheet:", OUTPUT_SHEET_NAME)
-    print("Left values:", len(left))
-    print("Right values:", len(right))
-    print("Alignment steps:", len(alignment))
-    print("Matches written:", sum(1 for step in alignment if step["matched"]))
+    result = {
+        "output_file": str(OUTPUT_FILE),
+        "input_sheet": src_ws.title,
+        "output_sheet": OUTPUT_SHEET_NAME,
+        "left_values": len(left),
+        "right_values": len(right),
+        "alignment_steps": len(alignment),
+        "matches_written": sum(1 for step in alignment if step["matched"]),
+    }
+
+    print("Done:", result["output_file"])
+    print("Input sheet:", result["input_sheet"])
+    print("Output sheet:", result["output_sheet"])
+    print("Left values:", result["left_values"])
+    print("Right values:", result["right_values"])
+    print("Alignment steps:", result["alignment_steps"])
+    print("Matches written:", result["matches_written"])
+
+    return result
+
+
+def main():
+    """
+    Allows you to still run this file directly from terminal:
+
+        python3 version1.py
+    """
+    process_excel(
+        input_file=INPUT_FILE,
+        output_file=OUTPUT_FILE,
+        input_sheet_name=INPUT_SHEET_NAME,
+        output_sheet_name=OUTPUT_SHEET_NAME,
+        start_row=START_ROW,
+        header_row=HEADER_ROW,
+        left_input_col=LEFT_INPUT_COL,
+        left_block_start_col=LEFT_BLOCK_START_COL,
+        left_block_end_col=LEFT_BLOCK_END_COL,
+        left_output_start_col=LEFT_OUTPUT_START_COL,
+        right_input_col=RIGHT_INPUT_COL,
+        right_block_start_col=RIGHT_BLOCK_START_COL,
+        right_block_end_col=RIGHT_BLOCK_END_COL,
+        right_output_start_col=RIGHT_OUTPUT_START_COL,
+        threshold=THRESHOLD,
+    )
 
 
 if __name__ == "__main__":
