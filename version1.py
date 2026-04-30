@@ -2,7 +2,7 @@ from copy import copy
 
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
-from openpyxl.utils import column_index_from_string
+from openpyxl.utils import column_index_from_string, get_column_letter
 
 
 # =========================
@@ -104,6 +104,55 @@ def copy_block(src_ws, dst_ws, src_row, dst_row, src_start_col, src_end_col, dst
         src_cell = src_ws.cell(row=src_row, column=src_col)
         dst_cell = dst_ws.cell(row=dst_row, column=dst_start + offset)
         copy_cell(src_cell, dst_cell)
+
+
+def block_width_cols(start_col, end_col):
+    """Number of columns in an inclusive A..Z / AA.. range."""
+    return col_to_num(end_col) - col_to_num(start_col) + 1
+
+
+def assert_match_column_in_block(match_col, block_start, block_end, side_label):
+    """Match column must lie inside the block that moves together (e.g. A–F with match F)."""
+    m = col_to_num(match_col)
+    lo = col_to_num(block_start)
+    hi = col_to_num(block_end)
+    if lo > hi:
+        raise ValueError(
+            f"{side_label}: block start {block_start} must be at or before end {block_end}."
+        )
+    if not (lo <= m <= hi):
+        raise ValueError(
+            f"{side_label}: match column {match_col} must be between {block_start} and {block_end} "
+            f"(it should be one of the columns you are copying)."
+        )
+
+
+def nudge_right_output_if_overlaps():
+    """
+    If the right output block would overlap the left output block, start the right
+    block in the first column after the left block (so e.g. left A–F → right can start at G).
+    """
+    global RIGHT_OUTPUT_START_COL
+    left_w = block_width_cols(LEFT_BLOCK_START_COL, LEFT_BLOCK_END_COL)
+    left_out_start = col_to_num(LEFT_OUTPUT_START_COL)
+    left_out_end = left_out_start + left_w - 1
+    right_out_start = col_to_num(RIGHT_OUTPUT_START_COL)
+    if right_out_start <= left_out_end:
+        RIGHT_OUTPUT_START_COL = get_column_letter(left_out_end + 1)
+
+
+def sanitize_excel_sheet_title(title, default="Aligned"):
+    """
+    Excel worksheet names max 31 chars and cannot contain: \\ / ? * [ ]
+    """
+    raw = (title or "").strip()
+    if not raw:
+        raw = default
+    illegal = '\\/*?:[]'
+    cleaned = "".join(c for c in raw if c not in illegal).strip()
+    if not cleaned:
+        cleaned = default
+    return cleaned[:31]
 
 
 def highlight_block(ws, row, start_col, end_col):
@@ -267,15 +316,15 @@ def align_with_dp(left, right):
 # Output Sheet
 # =========================
 
-def create_output_sheet(wb, src_ws):
+def create_output_sheet(wb, src_ws, sheet_title):
     """
     Create a new output sheet for aligned results.
     Original sheet is not modified.
     """
-    if OUTPUT_SHEET_NAME in wb.sheetnames:
-        del wb[OUTPUT_SHEET_NAME]
+    if sheet_title in wb.sheetnames:
+        del wb[sheet_title]
 
-    out_ws = wb.create_sheet(OUTPUT_SHEET_NAME)
+    out_ws = wb.create_sheet(sheet_title)
 
     # Copy left headers A:D
     copy_block(
@@ -288,10 +337,7 @@ def create_output_sheet(wb, src_ws):
         LEFT_OUTPUT_START_COL
     )
 
-    # Leave E blank because difference column is ignored
-    out_ws["E1"] = ""
-
-    # Copy right headers F:H
+    # Copy right headers (place after left on the output sheet; see nudge_right_output_if_overlaps)
     copy_block(
         src_ws,
         out_ws,
@@ -320,7 +366,8 @@ def write_alignment(src_ws, out_ws, alignment):
     Right block:
         F:H
 
-    Column E is ignored.
+    Left and right widths come from config; leave empty columns between them on
+    the output sheet if their start columns leave a gap.
     """
     output_row = START_ROW
 
@@ -413,7 +460,8 @@ def process_excel(
     OUTPUT_FILE = output_file
 
     INPUT_SHEET_NAME = input_sheet_name
-    OUTPUT_SHEET_NAME = output_sheet_name
+    resolved_output_sheet = sanitize_excel_sheet_title(output_sheet_name)
+    OUTPUT_SHEET_NAME = resolved_output_sheet
 
     START_ROW = int(start_row)
     HEADER_ROW = int(header_row)
@@ -430,6 +478,14 @@ def process_excel(
 
     THRESHOLD = float(threshold)
 
+    assert_match_column_in_block(
+        LEFT_INPUT_COL, LEFT_BLOCK_START_COL, LEFT_BLOCK_END_COL, "First column group"
+    )
+    assert_match_column_in_block(
+        RIGHT_INPUT_COL, RIGHT_BLOCK_START_COL, RIGHT_BLOCK_END_COL, "Second column group"
+    )
+    nudge_right_output_if_overlaps()
+
     wb = load_workbook(INPUT_FILE)
 
     if INPUT_SHEET_NAME in wb.sheetnames:
@@ -444,7 +500,7 @@ def process_excel(
 
     alignment = align_with_dp(left, right)
 
-    out_ws = create_output_sheet(wb, src_ws)
+    out_ws = create_output_sheet(wb, src_ws, resolved_output_sheet)
     write_alignment(src_ws, out_ws, alignment)
 
     wb.save(OUTPUT_FILE)
