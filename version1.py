@@ -70,8 +70,11 @@ MATCH_SCORE = 2
 MISMATCH_SCORE = -10
 GAP_SCORE = -1
 
-# Highlight unmatched rows orange
-UNMATCHED_FILL = PatternFill(fill_type="solid", fgColor="FFD4A8")
+# Highlight unmatched rows yellow
+UNMATCHED_FILL = PatternFill(fill_type="solid", fgColor="FFF9C4")
+
+# Highlight rows that have a computed abs-difference (very light orange)
+DIFF_ROW_FILL = PatternFill(fill_type="solid", fgColor="FFF4E6")
 
 
 # =========================
@@ -193,6 +196,25 @@ def highlight_block(ws, row, start_col, end_col):
 
     for col in range(start, end + 1):
         ws.cell(row=row, column=col).fill = UNMATCHED_FILL
+
+
+def highlight_difference_row(ws, row, diff_col):
+    """
+    Highlight both pasted blocks + diff column for rows where abs-difference exists.
+    """
+    left_s, left_e = output_block_extent(
+        LEFT_OUTPUT_START_COL, LEFT_BLOCK_START_COL, LEFT_BLOCK_END_COL
+    )
+    right_s, right_e = output_block_extent(
+        RIGHT_OUTPUT_START_COL, RIGHT_BLOCK_START_COL, RIGHT_BLOCK_END_COL
+    )
+    d = col_to_num(diff_col)
+
+    for col in range(left_s, left_e + 1):
+        ws.cell(row=row, column=col).fill = DIFF_ROW_FILL
+    for col in range(right_s, right_e + 1):
+        ws.cell(row=row, column=col).fill = DIFF_ROW_FILL
+    ws.cell(row=row, column=d).fill = DIFF_ROW_FILL
 
 
 def read_column(ws, col_letter):
@@ -466,6 +488,7 @@ def write_difference_column(out_ws, alignment, diff_col):
             out_ws.cell(row=output_row, column=d).value = abs(
                 left_item["value"] - right_item["value"]
             )
+            highlight_difference_row(out_ws, output_row, diff_col)
         else:
             out_ws.cell(row=output_row, column=d).value = None
 
@@ -504,7 +527,7 @@ def process_excel(
 
     global INPUT_FILE, OUTPUT_FILE
     global INPUT_SHEET_NAME, OUTPUT_SHEET_NAME
-    global START_ROW, HEADER_FIRST_ROW, HEADER_LAST_ROW
+    global START_ROW, HEADER_ROW
     global LEFT_INPUT_COL, LEFT_BLOCK_START_COL, LEFT_BLOCK_END_COL, LEFT_OUTPUT_START_COL
     global RIGHT_INPUT_COL, RIGHT_BLOCK_START_COL, RIGHT_BLOCK_END_COL, RIGHT_OUTPUT_START_COL
     global THRESHOLD

@@ -47,6 +47,7 @@ HOME_HTML = """
     input[type="text"], input[type="number"], input[type="file"] {
       width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 15px;
     }
+    input::placeholder { color: #9ca3af; }
     .inline2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
     .block-title { font-size: 0.85rem; font-weight: 600; margin: 4px 0 0; color: #222; }
     .col-row {
@@ -62,22 +63,27 @@ HOME_HTML = """
       background: var(--btn); color: #fff; border: none; border-radius: 8px; cursor: pointer;
     }
     button[type="submit"]:hover { filter: brightness(1.06); }
+    button[type="submit"][disabled] { opacity: 0.8; cursor: wait; }
+    .submit-msg { font-size: 0.9rem; color: #374151; min-height: 1.2em; margin-top: 4px; }
     .preview-msg { font-size: 0.8rem; color: #555; margin: 4px 0 0; min-height: 1.25em; }
     .preview-holder {
       overflow: auto; max-height: 300px; border: 1px solid var(--border); border-radius: 6px;
       margin-top: 6px; background: #fafafa;
     }
     .preview-holder table { border-collapse: collapse; font-size: 11px; font-family: ui-monospace, monospace; }
+    .preview-holder th,
     .preview-holder td {
       border: 1px solid #e8e8e8; padding: 3px 7px;
       white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis;
     }
+    .preview-holder th { background: #e5e7eb; font-weight: 600; text-align: center; }
+    .preview-holder .row-num { background: #f3f4f6; text-align: right; }
     .preview-holder tr:nth-child(even) td { background: #f0f0f0; }
   </style>
 </head>
 <body>
   <h1>Align spreadsheet</h1>
-  <form action="/process" method="post" enctype="multipart/form-data">
+  <form id="align-form" action="/process" method="post" enctype="multipart/form-data">
     <div>
       <label for="file">File</label>
       <input id="file" type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
@@ -87,45 +93,45 @@ HOME_HTML = """
     <div class="inline2">
       <div>
         <label for="input_sheet_name">Sheet in</label>
-        <input id="input_sheet_name" type="text" name="input_sheet_name" value="sheet1" autocomplete="off" />
+        <input id="input_sheet_name" type="text" name="input_sheet_name" placeholder="sheet1" autocomplete="off" />
       </div>
       <div>
         <label for="output_sheet_name">Sheet out</label>
-        <input id="output_sheet_name" type="text" name="output_sheet_name" value="Aligned results" autocomplete="off" />
+        <input id="output_sheet_name" type="text" name="output_sheet_name" placeholder="Aligned results" autocomplete="off" />
       </div>
     </div>
     <div class="inline2">
       <div>
         <label for="header_first_row">Header from</label>
-        <input id="header_first_row" type="number" name="header_first_row" value="1" min="1" />
+        <input id="header_first_row" type="number" name="header_first_row" placeholder="1" min="1" />
       </div>
       <div>
         <label for="header_last_row">Header to</label>
-        <input id="header_last_row" type="number" name="header_last_row" value="1" min="1" />
+        <input id="header_last_row" type="number" name="header_last_row" placeholder="1" min="1" />
       </div>
     </div>
     <div>
       <label for="start_row">Data row — first row with numbers to match</label>
-      <input id="start_row" type="number" name="start_row" value="2" min="1" />
+      <input id="start_row" type="number" name="start_row" placeholder="2" min="1" />
     </div>
 
     <p class="block-title">Left</p>
     <div class="col-row">
       <div class="cell">
         <label for="left_block_start_col">From</label>
-        <input id="left_block_start_col" type="text" name="left_block_start_col" value="A" maxlength="3" />
+        <input id="left_block_start_col" type="text" name="left_block_start_col" placeholder="A" maxlength="3" />
       </div>
       <div class="cell">
         <label for="left_block_end_col">To</label>
-        <input id="left_block_end_col" type="text" name="left_block_end_col" value="D" maxlength="3" />
+        <input id="left_block_end_col" type="text" name="left_block_end_col" placeholder="D" maxlength="3" />
       </div>
       <div class="cell">
         <label for="left_input_col">Match</label>
-        <input id="left_input_col" type="text" name="left_input_col" value="D" maxlength="3" />
+        <input id="left_input_col" type="text" name="left_input_col" placeholder="D" maxlength="3" />
       </div>
       <div class="cell">
         <label for="left_output_start_col" title="First column where this block is pasted on the new sheet">Out</label>
-        <input id="left_output_start_col" type="text" name="left_output_start_col" value="A" maxlength="3"
+        <input id="left_output_start_col" type="text" name="left_output_start_col" placeholder="A" maxlength="3"
           title="On the NEW sheet: column where the left block starts (often A)." />
       </div>
     </div>
@@ -134,19 +140,19 @@ HOME_HTML = """
     <div class="col-row">
       <div class="cell">
         <label for="right_block_start_col">From</label>
-        <input id="right_block_start_col" type="text" name="right_block_start_col" value="F" maxlength="3" />
+        <input id="right_block_start_col" type="text" name="right_block_start_col" placeholder="F" maxlength="3" />
       </div>
       <div class="cell">
         <label for="right_block_end_col">To</label>
-        <input id="right_block_end_col" type="text" name="right_block_end_col" value="H" maxlength="3" />
+        <input id="right_block_end_col" type="text" name="right_block_end_col" placeholder="H" maxlength="3" />
       </div>
       <div class="cell">
         <label for="right_input_col">Match</label>
-        <input id="right_input_col" type="text" name="right_input_col" value="F" maxlength="3" />
+        <input id="right_input_col" type="text" name="right_input_col" placeholder="F" maxlength="3" />
       </div>
       <div class="cell">
         <label for="right_output_start_col" title="First column where this block is pasted on the new sheet">Out</label>
-        <input id="right_output_start_col" type="text" name="right_output_start_col" value="F" maxlength="3"
+        <input id="right_output_start_col" type="text" name="right_output_start_col" placeholder="F" maxlength="3"
           title="On the NEW sheet: column where the right block starts. Auto-shifts right if it would overlap the left block." />
       </div>
     </div>
@@ -154,18 +160,19 @@ HOME_HTML = """
     <div class="inline2">
       <div>
         <label for="threshold" title="Match if amounts are closer than this">Max diff</label>
-        <input id="threshold" type="number" step="0.001" name="threshold" value="0.5" />
+        <input id="threshold" type="number" step="0.001" name="threshold" placeholder="0.5" />
       </div>
       <div>
         <label for="diff_output_col"
           title="Column on the new sheet between the two pasted blocks — shows |left − right| for each aligned row">
           Diff col</label>
-        <input id="diff_output_col" type="text" name="diff_output_col" value="E" maxlength="3"
+        <input id="diff_output_col" type="text" name="diff_output_col" placeholder="E" maxlength="3"
           title="New sheet column (e.g. E) between left and right data. Absolute difference after aligning." />
       </div>
     </div>
 
-    <button type="submit">Download</button>
+    <button id="submit-btn" type="submit">Download</button>
+    <p id="submit-msg" class="submit-msg"></p>
   </form>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" crossorigin="anonymous"></script>
@@ -189,6 +196,17 @@ HOME_HTML = """
       return names[0];
     }
 
+    function toColLabel(idx) {
+      var n = idx + 1;
+      var s = "";
+      while (n > 0) {
+        var rem = (n - 1) % 26;
+        s = String.fromCharCode(65 + rem) + s;
+        n = Math.floor((n - 1) / 26);
+      }
+      return s;
+    }
+
     function renderPreview(wb, sheetName) {
       var ws = wb.Sheets[sheetName];
       if (!ws) {
@@ -198,12 +216,33 @@ HOME_HTML = """
       }
       var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
       var table = document.createElement("table");
+      var thead = document.createElement("thead");
       var tbody = document.createElement("tbody");
       var rowCount = Math.min(rows.length, MAX_R);
+      var maxCols = 0;
+      for (var i = 0; i < rowCount; i++) {
+        maxCols = Math.max(maxCols, (rows[i] || []).length);
+      }
+      var colCount = Math.min(Math.max(maxCols, 1), MAX_C);
+
+      var headTr = document.createElement("tr");
+      var corner = document.createElement("th");
+      corner.textContent = "#";
+      headTr.appendChild(corner);
+      for (var hc = 0; hc < colCount; hc++) {
+        var h = document.createElement("th");
+        h.textContent = toColLabel(hc);
+        headTr.appendChild(h);
+      }
+      thead.appendChild(headTr);
+
       for (var r = 0; r < rowCount; r++) {
         var tr = document.createElement("tr");
+        var rowHead = document.createElement("th");
+        rowHead.className = "row-num";
+        rowHead.textContent = String(r + 1);
+        tr.appendChild(rowHead);
         var row = rows[r] || [];
-        var colCount = Math.min(Math.max(row.length, 0), MAX_C);
         for (var c = 0; c < colCount; c++) {
           var td = document.createElement("td");
           var v = row[c];
@@ -212,6 +251,7 @@ HOME_HTML = """
         }
         tbody.appendChild(tr);
       }
+      table.appendChild(thead);
       table.appendChild(tbody);
       previewHolder.innerHTML = "";
       previewHolder.appendChild(table);
@@ -245,6 +285,15 @@ HOME_HTML = """
     fileEl.addEventListener("change", runPreview);
     sheetNameEl.addEventListener("input", function () {
       if (fileEl.files && fileEl.files[0]) runPreview();
+    });
+
+    var formEl = document.getElementById("align-form");
+    var submitBtn = document.getElementById("submit-btn");
+    var submitMsg = document.getElementById("submit-msg");
+    formEl.addEventListener("submit", function () {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Working...";
+      submitMsg.textContent = "Shifting columns...";
     });
   })();
   </script>
