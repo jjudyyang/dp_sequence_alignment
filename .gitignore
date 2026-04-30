@@ -12,3 +12,6 @@ uploads/*
 !uploads/.gitkeep
 outputs/*
 !outputs/.gitkeep
+
+# Local usage counter database
+data/

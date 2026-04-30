@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 from pathlib import Path
 import re
 import shutil
+import sqlite3
 import uuid
 
 from version1 import process_excel
@@ -12,9 +13,40 @@ app = FastAPI(title="Excel Alignment")
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 OUTPUT_DIR = BASE_DIR / "outputs"
+DATA_DIR = BASE_DIR / "data"
+USAGE_DB = DATA_DIR / "usage.db"
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(exist_ok=True)
+
+
+def get_usage_count():
+    """How many successful alignments have finished (persistent on disk)."""
+    if not USAGE_DB.exists():
+        return 0
+    conn = sqlite3.connect(USAGE_DB)
+    try:
+        row = conn.execute("SELECT runs FROM usage WHERE id = 1").fetchone()
+        return int(row[0]) if row else 0
+    finally:
+        conn.close()
+
+
+def record_successful_run():
+    """Increment after a file is generated and return the new total."""
+    conn = sqlite3.connect(USAGE_DB)
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS usage (id INTEGER PRIMARY KEY CHECK (id = 1), runs INTEGER NOT NULL DEFAULT 0)"
+        )
+        conn.execute("INSERT OR IGNORE INTO usage (id, runs) VALUES (1, 0)")
+        conn.execute("UPDATE usage SET runs = runs + 1 WHERE id = 1")
+        conn.commit()
+        row = conn.execute("SELECT runs FROM usage WHERE id = 1").fetchone()
+        return int(row[0]) if row else 1
+    finally:
+        conn.close()
 
 
 def shifted_download_filename(original_name: str) -> str:
@@ -80,9 +112,49 @@ HOME_HTML = """
     .preview-holder th { background: #e5e7eb; font-weight: 600; text-align: center; }
     .preview-holder .row-num { background: #f3f4f6; text-align: right; }
     .preview-holder tr:nth-child(even) td { background: #f0f0f0; }
+    .usage-foot { font-size: 0.8rem; color: #6b7280; margin-top: 28px; padding-top: 16px; border-top: 1px solid #eee; }
+    #progress-overlay {
+      display: none; position: fixed; inset: 0; z-index: 100;
+      align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.4);
+      flex-direction: column;
+    }
+    #progress-overlay.is-visible { display: flex; }
+    .progress-modal {
+      background: #fff; border-radius: 12px; padding: 22px 24px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.15); max-width: 22rem; width: 90%;
+    }
+    .progress-modal h2 {
+      margin: 0 0 8px; font-size: 1.05rem; font-weight: 600; color: #111827;
+    }
+    .progress-modal .progress-sub { margin: 0 0 14px; font-size: 0.82rem; color: #6b7280; line-height: 1.35; }
+    .progress-track {
+      height: 11px; border-radius: 6px; background: #e5e7eb;
+      overflow: hidden; margin-bottom: 8px;
+    }
+    .progress-bar-indet {
+      height: 100%; width: 45%;
+      border-radius: 6px;
+      background: linear-gradient(90deg, #93c5fd, #2563eb, #93c5fd);
+      animation: prog-slide 1.35s infinite ease-in-out;
+    }
+    @keyframes prog-slide {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(280%); }
+    }
+    .progress-hint { font-size: 0.78rem; color: #9ca3af; margin: 0; }
   </style>
 </head>
 <body>
+  <div id="progress-overlay" role="dialog" aria-modal="true" aria-labelledby="prog-title" aria-hidden="true">
+    <div class="progress-modal">
+      <h2 id="prog-title">Working on your file…</h2>
+      <p class="progress-sub">We can’t estimate time—it depends on file size. Please keep this tab open.</p>
+      <div class="progress-track"><div class="progress-bar-indet"></div></div>
+      <p class="progress-hint">Indeterminate progress (processing on the server)</p>
+    </div>
+  </div>
+
   <h1>Align spreadsheet</h1>
   <form id="align-form" action="/process" method="post" enctype="multipart/form-data">
     <div>
@@ -176,6 +248,8 @@ HOME_HTML = """
     <p id="submit-msg" class="submit-msg"></p>
   </form>
 
+  <p class="usage-foot">Successful runs: <strong id="usage-count">__USAGE_COUNT__</strong></p>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" crossorigin="anonymous"></script>
   <script>
   (function () {
@@ -260,7 +334,11 @@ HOME_HTML = """
       previewMsg.textContent = "Preview · " + sheetName + note;
     }
 
-    function runPreview() {
+    var cachedWB = null;
+
+    /** Re-read Excel from disk (slow). Only do this when the user picks a new file. */
+    function parseFileAndCache(cb) {
+      cachedWB = null;
       previewMsg.textContent = "";
       previewHolder.innerHTML = "";
       var f = fileEl.files && fileEl.files[0];
@@ -272,29 +350,124 @@ HOME_HTML = """
       var reader = new FileReader();
       reader.onload = function (e) {
         try {
-          var wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
-          var name = pickSheet(wb, (sheetNameEl.value || "").trim());
-          renderPreview(wb, name);
+          cachedWB = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+          if (typeof cb === "function") cb();
+          else redrawPreviewOnly();
         } catch (err) {
           previewMsg.textContent = "Could not preview this file.";
           previewHolder.innerHTML = "";
+          cachedWB = null;
         }
       };
       reader.readAsArrayBuffer(f);
     }
 
-    fileEl.addEventListener("change", runPreview);
+    /** Cheap: reuse parsed workbook — only Sheet in text changes (no glitch while typing). */
+    function redrawPreviewOnly() {
+      if (!cachedWB) return;
+      try {
+        var name = pickSheet(cachedWB, (sheetNameEl.value || "").trim());
+        renderPreview(cachedWB, name);
+      } catch (err) {
+        previewMsg.textContent = "Could not update preview.";
+        previewHolder.innerHTML = "";
+      }
+    }
+
+    var sheetDeb = null;
+
+    function scheduleSheetRedraw() {
+      if (sheetDeb) window.clearTimeout(sheetDeb);
+      sheetDeb = window.setTimeout(function () {
+        sheetDeb = null;
+        redrawPreviewOnly();
+      }, 380);
+    }
+
+    fileEl.addEventListener("change", function () {
+      parseFileAndCache();
+    });
     sheetNameEl.addEventListener("input", function () {
-      if (fileEl.files && fileEl.files[0]) runPreview();
+      if (fileEl.files && fileEl.files[0] && cachedWB) scheduleSheetRedraw();
     });
 
     var formEl = document.getElementById("align-form");
     var submitBtn = document.getElementById("submit-btn");
     var submitMsg = document.getElementById("submit-msg");
-    formEl.addEventListener("submit", function () {
+    var progOverlay = document.getElementById("progress-overlay");
+
+    function showProgress(show) {
+      progOverlay.classList.toggle("is-visible", !!show);
+      progOverlay.setAttribute("aria-hidden", show ? "false" : "true");
+    }
+
+    function parseFilename(cd) {
+      if (!cd) return "shifted_output.xlsx";
+      var low = cd.toLowerCase();
+      var mime = low.indexOf("filename*=utf-8''");
+      if (mime >= 0) {
+        var rest = cd.slice(mime + 17).trim();
+        var end = rest.indexOf(";");
+        var encoded = end >= 0 ? rest.slice(0, end).trim() : rest;
+        try { return decodeURIComponent(encoded); } catch (e2) {}
+      }
+      var dq = cd.match(/filename="([^"]+)"/i);
+      if (dq && dq[1]) return dq[1];
+      var fq = cd.match(/filename=([^;\s]+)/i);
+      if (fq && fq[1]) return fq[1].replace(/^["']|["']$/g, "").trim();
+      return "shifted_output.xlsx";
+    }
+
+    formEl.addEventListener("submit", async function (ev) {
+      ev.preventDefault();
       submitBtn.disabled = true;
-      submitBtn.textContent = "Working...";
-      submitMsg.textContent = "Shifting columns...";
+      submitBtn.textContent = "Working…";
+      submitMsg.textContent = "";
+      showProgress(true);
+
+      var fd = new FormData(formEl);
+      try {
+        var resp = await fetch(formEl.action, { method: "POST", body: fd });
+
+        if (!resp.ok) {
+          var detail = "";
+          try {
+            var j = await resp.json();
+            if (j && typeof j.detail === "string") detail = j.detail;
+            else if (Array.isArray(j && j.detail) && j.detail[0]) {
+              detail = (j.detail[0].msg || j.detail[0].detail || "").toString();
+            }
+          } catch (ej) {}
+          if (!detail && resp.status === 400) detail = "Check your settings.";
+          throw new Error(detail || "Request failed.");
+        }
+
+        var hdr = resp.headers.get("X-Successful-Runs");
+        var usageEl = document.getElementById("usage-count");
+        if (hdr && usageEl) usageEl.textContent = hdr;
+        var fname = parseFilename(resp.headers.get("Content-Disposition"));
+
+        // Wait until the whole file arrives in the browser (server has finished generating it).
+        var blob = await resp.blob();
+
+        showProgress(false);
+
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = fname;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+        submitMsg.textContent = "Done — download should start.";
+      } catch (err) {
+        submitMsg.textContent = (err && err.message) ? err.message : "Something went wrong.";
+        showProgress(false);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Download";
+      }
     });
   })();
   </script>
@@ -305,7 +478,7 @@ HOME_HTML = """
 
 @app.get("/", response_class=HTMLResponse)
 def home():
-    return HTMLResponse(content=HOME_HTML)
+    return HTMLResponse(content=HOME_HTML.replace("__USAGE_COUNT__", str(get_usage_count())))
 
 
 @app.post("/process")
@@ -358,8 +531,11 @@ async def process_file(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    runs_total = record_successful_run()
+
     return FileResponse(
         output_path,
         filename=shifted_download_filename(file.filename or ""),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"X-Successful-Runs": str(runs_total)},
     )
