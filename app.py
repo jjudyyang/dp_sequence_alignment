@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from pathlib import Path
+import re
 import shutil
 import uuid
 
@@ -15,6 +16,20 @@ OUTPUT_DIR = BASE_DIR / "outputs"
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+
+def shifted_download_filename(original_name: str) -> str:
+    """
+    Browser download name: input basename stem + '_shifted.xlsx'.
+    Strips directories and characters that confuse Content-Disposition.
+    """
+    base = Path(original_name or "").name.strip()
+    if not base or base in (".", ".."):
+        return "workbook_shifted.xlsx"
+    stem = Path(base).stem.strip() or "workbook"
+    stem = re.sub(r'[\x00-\x1f\\/:*?"<>|]', "_", stem)[:180]
+    return f"{stem}_shifted.xlsx"
+
+
 HOME_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -25,14 +40,14 @@ HOME_HTML = """
   <style>
     :root { --border: #ddd; --btn: #2563eb; }
     * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; font-size: 16px; margin: 0; padding: 20px; max-width: 520px; }
+    body { font-family: system-ui, sans-serif; font-size: 16px; margin: 0; padding: 20px; max-width: 760px; }
     h1 { font-size: 1.25rem; margin: 0 0 16px; font-weight: 600; }
     form { display: flex; flex-direction: column; gap: 14px; }
     label { display: block; font-size: 0.8rem; color: #444; margin-bottom: 4px; }
     input[type="text"], input[type="number"], input[type="file"] {
       width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 15px;
     }
-    .inline2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .inline2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
     .block-title { font-size: 0.85rem; font-weight: 600; margin: 4px 0 0; color: #222; }
     .col-row {
       display: grid;
@@ -47,6 +62,17 @@ HOME_HTML = """
       background: var(--btn); color: #fff; border: none; border-radius: 8px; cursor: pointer;
     }
     button[type="submit"]:hover { filter: brightness(1.06); }
+    .preview-msg { font-size: 0.8rem; color: #555; margin: 4px 0 0; min-height: 1.25em; }
+    .preview-holder {
+      overflow: auto; max-height: 300px; border: 1px solid var(--border); border-radius: 6px;
+      margin-top: 6px; background: #fafafa;
+    }
+    .preview-holder table { border-collapse: collapse; font-size: 11px; font-family: ui-monospace, monospace; }
+    .preview-holder td {
+      border: 1px solid #e8e8e8; padding: 3px 7px;
+      white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis;
+    }
+    .preview-holder tr:nth-child(even) td { background: #f0f0f0; }
   </style>
 </head>
 <body>
@@ -55,6 +81,8 @@ HOME_HTML = """
     <div>
       <label for="file">File</label>
       <input id="file" type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
+      <p id="preview-msg" class="preview-msg"></p>
+      <div id="preview-holder" class="preview-holder"></div>
     </div>
     <div class="inline2">
       <div>
@@ -68,13 +96,17 @@ HOME_HTML = """
     </div>
     <div class="inline2">
       <div>
-        <label for="header_row">Header row</label>
-        <input id="header_row" type="number" name="header_row" value="1" min="1" />
+        <label for="header_first_row">Header from</label>
+        <input id="header_first_row" type="number" name="header_first_row" value="1" min="1" />
       </div>
       <div>
-        <label for="start_row">Data row</label>
-        <input id="start_row" type="number" name="start_row" value="2" min="1" />
+        <label for="header_last_row">Header to</label>
+        <input id="header_last_row" type="number" name="header_last_row" value="1" min="1" />
       </div>
+    </div>
+    <div>
+      <label for="start_row">Data row — first row with numbers to match</label>
+      <input id="start_row" type="number" name="start_row" value="2" min="1" />
     </div>
 
     <p class="block-title">Left</p>
@@ -92,8 +124,9 @@ HOME_HTML = """
         <input id="left_input_col" type="text" name="left_input_col" value="D" maxlength="3" />
       </div>
       <div class="cell">
-        <label for="left_output_start_col">Out</label>
-        <input id="left_output_start_col" type="text" name="left_output_start_col" value="A" maxlength="3" />
+        <label for="left_output_start_col" title="First column where this block is pasted on the new sheet">Out</label>
+        <input id="left_output_start_col" type="text" name="left_output_start_col" value="A" maxlength="3"
+          title="On the NEW sheet: column where the left block starts (often A)." />
       </div>
     </div>
 
@@ -112,18 +145,109 @@ HOME_HTML = """
         <input id="right_input_col" type="text" name="right_input_col" value="F" maxlength="3" />
       </div>
       <div class="cell">
-        <label for="right_output_start_col">Out</label>
-        <input id="right_output_start_col" type="text" name="right_output_start_col" value="F" maxlength="3" />
+        <label for="right_output_start_col" title="First column where this block is pasted on the new sheet">Out</label>
+        <input id="right_output_start_col" type="text" name="right_output_start_col" value="F" maxlength="3"
+          title="On the NEW sheet: column where the right block starts. Auto-shifts right if it would overlap the left block." />
       </div>
     </div>
 
-    <div>
-      <label for="threshold">Max diff</label>
-      <input id="threshold" type="number" step="0.001" name="threshold" value="0.5" />
+    <div class="inline2">
+      <div>
+        <label for="threshold" title="Match if amounts are closer than this">Max diff</label>
+        <input id="threshold" type="number" step="0.001" name="threshold" value="0.5" />
+      </div>
+      <div>
+        <label for="diff_output_col"
+          title="Column on the new sheet between the two pasted blocks — shows |left − right| for each aligned row">
+          Diff col</label>
+        <input id="diff_output_col" type="text" name="diff_output_col" value="E" maxlength="3"
+          title="New sheet column (e.g. E) between left and right data. Absolute difference after aligning." />
+      </div>
     </div>
 
     <button type="submit">Download</button>
   </form>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" crossorigin="anonymous"></script>
+  <script>
+  (function () {
+    var fileEl = document.getElementById("file");
+    var sheetNameEl = document.getElementById("input_sheet_name");
+    var previewMsg = document.getElementById("preview-msg");
+    var previewHolder = document.getElementById("preview-holder");
+    var MAX_R = 45;
+    var MAX_C = 16;
+
+    function pickSheet(wb, name) {
+      var names = wb.SheetNames;
+      if (!name) return names[0];
+      if (names.indexOf(name) >= 0) return name;
+      var lower = name.toLowerCase();
+      for (var i = 0; i < names.length; i++) {
+        if (names[i].toLowerCase() === lower) return names[i];
+      }
+      return names[0];
+    }
+
+    function renderPreview(wb, sheetName) {
+      var ws = wb.Sheets[sheetName];
+      if (!ws) {
+        previewMsg.textContent = "Preview: sheet not found.";
+        previewHolder.innerHTML = "";
+        return;
+      }
+      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+      var table = document.createElement("table");
+      var tbody = document.createElement("tbody");
+      var rowCount = Math.min(rows.length, MAX_R);
+      for (var r = 0; r < rowCount; r++) {
+        var tr = document.createElement("tr");
+        var row = rows[r] || [];
+        var colCount = Math.min(Math.max(row.length, 0), MAX_C);
+        for (var c = 0; c < colCount; c++) {
+          var td = document.createElement("td");
+          var v = row[c];
+          td.textContent = v == null ? "" : String(v);
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      previewHolder.innerHTML = "";
+      previewHolder.appendChild(table);
+      var note = rows.length > MAX_R ? " (first " + MAX_R + " of " + rows.length + " rows)" : "";
+      previewMsg.textContent = "Preview · " + sheetName + note;
+    }
+
+    function runPreview() {
+      previewMsg.textContent = "";
+      previewHolder.innerHTML = "";
+      var f = fileEl.files && fileEl.files[0];
+      if (!f) return;
+      if (typeof XLSX === "undefined") {
+        previewMsg.textContent = "Preview unavailable (spreadsheet parser did not load).";
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          var wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+          var name = pickSheet(wb, (sheetNameEl.value || "").trim());
+          renderPreview(wb, name);
+        } catch (err) {
+          previewMsg.textContent = "Could not preview this file.";
+          previewHolder.innerHTML = "";
+        }
+      };
+      reader.readAsArrayBuffer(f);
+    }
+
+    fileEl.addEventListener("change", runPreview);
+    sheetNameEl.addEventListener("input", function () {
+      if (fileEl.files && fileEl.files[0]) runPreview();
+    });
+  })();
+  </script>
 </body>
 </html>
 """
@@ -140,7 +264,8 @@ async def process_file(
     input_sheet_name: str = Form("sheet1"),
     output_sheet_name: str = Form("Aligned results"),
     start_row: int = Form(2),
-    header_row: int = Form(1),
+    header_first_row: int = Form(1),
+    header_last_row: int = Form(1),
     left_input_col: str = Form("D"),
     left_block_start_col: str = Form("A"),
     left_block_end_col: str = Form("D"),
@@ -150,6 +275,7 @@ async def process_file(
     right_block_end_col: str = Form("H"),
     right_output_start_col: str = Form("F"),
     threshold: float = Form(0.5),
+    diff_output_col: str = Form("E"),
 ):
     upload_id = str(uuid.uuid4())
 
@@ -166,7 +292,8 @@ async def process_file(
             input_sheet_name=input_sheet_name,
             output_sheet_name=output_sheet_name,
             start_row=start_row,
-            header_row=header_row,
+            header_first_row=header_first_row,
+            header_last_row=header_last_row,
             left_input_col=left_input_col,
             left_block_start_col=left_block_start_col,
             left_block_end_col=left_block_end_col,
@@ -176,12 +303,13 @@ async def process_file(
             right_block_end_col=right_block_end_col,
             right_output_start_col=right_output_start_col,
             threshold=threshold,
+            diff_output_col=diff_output_col,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return FileResponse(
         output_path,
-        filename="aligned_output.xlsx",
+        filename=shifted_download_filename(file.filename or ""),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )

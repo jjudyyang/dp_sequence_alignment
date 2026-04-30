@@ -17,7 +17,10 @@ INPUT_SHEET_NAME = "sheet1"
 OUTPUT_SHEET_NAME = "sheet 1 aligned result"
 
 START_ROW = 2
-HEADER_ROW = 1
+
+# Rows on the sheet that belong to headers (copied verbatim to output). Inclusive range.
+HEADER_FIRST_ROW = 1
+HEADER_LAST_ROW = 1
 
 # Left side: match using D, move A:D together
 LEFT_INPUT_COL = "D"
@@ -33,6 +36,32 @@ RIGHT_OUTPUT_START_COL = "F"
 
 # Matching rule
 THRESHOLD = 0.5
+
+# After alignment: |left match − right match| is written here (must not overlap left/right output blocks).
+DIFF_OUTPUT_COL = "E"
+
+
+def output_block_extent(output_start_col, block_start_col, block_end_col):
+    """Inclusive output column indexes where a pasted block occupies space."""
+    w = block_width_cols(block_start_col, block_end_col)
+    s = col_to_num(output_start_col)
+    return s, s + w - 1
+
+
+def assert_diff_column_clear_of_blocks(diff_col_letter):
+    """Difference column cannot sit inside the pasted left or right regions."""
+    d = col_to_num(diff_col_letter)
+    ls, le = output_block_extent(
+        LEFT_OUTPUT_START_COL, LEFT_BLOCK_START_COL, LEFT_BLOCK_END_COL
+    )
+    rs, re_end = output_block_extent(
+        RIGHT_OUTPUT_START_COL, RIGHT_BLOCK_START_COL, RIGHT_BLOCK_END_COL
+    )
+    if ls <= d <= le or rs <= d <= re_end:
+        raise ValueError(
+            f"Difference column {diff_col_letter} overlaps pasted data. Choose a gap column "
+            f"(between the left block and right block on the output sheet)."
+        )
 
 
 
@@ -326,27 +355,26 @@ def create_output_sheet(wb, src_ws, sheet_title):
 
     out_ws = wb.create_sheet(sheet_title)
 
-    # Copy left headers A:D
-    copy_block(
-        src_ws,
-        out_ws,
-        HEADER_ROW,
-        HEADER_ROW,
-        LEFT_BLOCK_START_COL,
-        LEFT_BLOCK_END_COL,
-        LEFT_OUTPUT_START_COL
-    )
-
-    # Copy right headers (place after left on the output sheet; see nudge_right_output_if_overlaps)
-    copy_block(
-        src_ws,
-        out_ws,
-        HEADER_ROW,
-        HEADER_ROW,
-        RIGHT_BLOCK_START_COL,
-        RIGHT_BLOCK_END_COL,
-        RIGHT_OUTPUT_START_COL
-    )
+    # Copy header rows from source onto the output at the same row numbers
+    for hr in range(HEADER_FIRST_ROW, HEADER_LAST_ROW + 1):
+        copy_block(
+            src_ws,
+            out_ws,
+            hr,
+            hr,
+            LEFT_BLOCK_START_COL,
+            LEFT_BLOCK_END_COL,
+            LEFT_OUTPUT_START_COL,
+        )
+        copy_block(
+            src_ws,
+            out_ws,
+            hr,
+            hr,
+            RIGHT_BLOCK_START_COL,
+            RIGHT_BLOCK_END_COL,
+            RIGHT_OUTPUT_START_COL,
+        )
 
     # Copy column widths from source sheet
     for col_letter, dim in src_ws.column_dimensions.items():
@@ -421,6 +449,29 @@ def write_alignment(src_ws, out_ws, alignment):
         output_row += 1
 
 
+def write_difference_column(out_ws, alignment, diff_col):
+    """
+    After rows are pasted, fill one column with abs(left − right) for the match values.
+
+    Rows with only left or only right aligned stay blank in the diff column.
+    """
+    d = col_to_num(diff_col)
+    out_ws.cell(row=HEADER_LAST_ROW, column=d).value = "Abs diff"
+
+    output_row = START_ROW
+    for step in alignment:
+        left_item = step["left"]
+        right_item = step["right"]
+        if left_item is not None and right_item is not None:
+            out_ws.cell(row=output_row, column=d).value = abs(
+                left_item["value"] - right_item["value"]
+            )
+        else:
+            out_ws.cell(row=output_row, column=d).value = None
+
+        output_row += 1
+
+
 # =========================
 # Web-App Wrapper / Main
 # =========================
@@ -431,7 +482,8 @@ def process_excel(
     input_sheet_name="sheet1",
     output_sheet_name="sheet 1 aligned result",
     start_row=2,
-    header_row=1,
+    header_first_row=1,
+    header_last_row=1,
     left_input_col="D",
     left_block_start_col="A",
     left_block_end_col="D",
@@ -441,6 +493,7 @@ def process_excel(
     right_block_end_col="H",
     right_output_start_col="F",
     threshold=0.5,
+    diff_output_col="E",
 ):
     """
     Main processing function.
@@ -451,7 +504,7 @@ def process_excel(
 
     global INPUT_FILE, OUTPUT_FILE
     global INPUT_SHEET_NAME, OUTPUT_SHEET_NAME
-    global START_ROW, HEADER_ROW
+    global START_ROW, HEADER_FIRST_ROW, HEADER_LAST_ROW
     global LEFT_INPUT_COL, LEFT_BLOCK_START_COL, LEFT_BLOCK_END_COL, LEFT_OUTPUT_START_COL
     global RIGHT_INPUT_COL, RIGHT_BLOCK_START_COL, RIGHT_BLOCK_END_COL, RIGHT_OUTPUT_START_COL
     global THRESHOLD
@@ -464,7 +517,18 @@ def process_excel(
     OUTPUT_SHEET_NAME = resolved_output_sheet
 
     START_ROW = int(start_row)
-    HEADER_ROW = int(header_row)
+    hf = int(header_first_row)
+    hl = int(header_last_row)
+    if hl < hf:
+        raise ValueError(
+            "Header last row must be greater than or equal to header first row."
+        )
+    HEADER_FIRST_ROW = hf
+    HEADER_LAST_ROW = hl
+    if START_ROW <= HEADER_LAST_ROW:
+        raise ValueError(
+            "Data row must be below all header rows (after header last row)."
+        )
 
     LEFT_INPUT_COL = left_input_col.upper()
     LEFT_BLOCK_START_COL = left_block_start_col.upper()
@@ -486,6 +550,16 @@ def process_excel(
     )
     nudge_right_output_if_overlaps()
 
+    diff_clean = (diff_output_col or "").strip().upper()
+    if diff_clean:
+        try:
+            col_to_num(diff_clean)
+        except Exception:
+            raise ValueError(
+                "Difference column must be valid letters (examples: E, AA)."
+            ) from None
+        assert_diff_column_clear_of_blocks(diff_clean)
+
     wb = load_workbook(INPUT_FILE)
 
     if INPUT_SHEET_NAME in wb.sheetnames:
@@ -502,6 +576,8 @@ def process_excel(
 
     out_ws = create_output_sheet(wb, src_ws, resolved_output_sheet)
     write_alignment(src_ws, out_ws, alignment)
+    if diff_clean:
+        write_difference_column(out_ws, alignment, diff_clean)
 
     wb.save(OUTPUT_FILE)
 
@@ -538,7 +614,8 @@ def main():
         input_sheet_name=INPUT_SHEET_NAME,
         output_sheet_name=OUTPUT_SHEET_NAME,
         start_row=START_ROW,
-        header_row=HEADER_ROW,
+        header_first_row=HEADER_FIRST_ROW,
+        header_last_row=HEADER_LAST_ROW,
         left_input_col=LEFT_INPUT_COL,
         left_block_start_col=LEFT_BLOCK_START_COL,
         left_block_end_col=LEFT_BLOCK_END_COL,
@@ -548,6 +625,7 @@ def main():
         right_block_end_col=RIGHT_BLOCK_END_COL,
         right_output_start_col=RIGHT_OUTPUT_START_COL,
         threshold=THRESHOLD,
+        diff_output_col=DIFF_OUTPUT_COL,
     )
 
 
