@@ -36,7 +36,8 @@ HOME_HTML = """
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Align Excel</title>
+  <title>Envision - SW</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%98%8A%3C/text%3E%3C/svg%3E">
   <style>
     :root { --border: #ddd; --btn: #2563eb; }
     * { box-sizing: border-box; }
@@ -103,35 +104,35 @@ HOME_HTML = """
     <div class="inline2">
       <div>
         <label for="header_first_row">Header from</label>
-        <input id="header_first_row" type="number" name="header_first_row" placeholder="1" min="1" />
+        <input id="header_first_row" type="number" name="header_first_row" value="1" placeholder="1" min="1" />
       </div>
       <div>
         <label for="header_last_row">Header to</label>
-        <input id="header_last_row" type="number" name="header_last_row" placeholder="1" min="1" />
+        <input id="header_last_row" type="number" name="header_last_row" value="2" placeholder="2" min="1" />
       </div>
     </div>
     <div>
       <label for="start_row">Data row — first row with numbers to match</label>
-      <input id="start_row" type="number" name="start_row" placeholder="2" min="1" />
+      <input id="start_row" type="number" name="start_row" value="3" placeholder="3" min="1" />
     </div>
 
     <p class="block-title">Left</p>
     <div class="col-row">
       <div class="cell">
         <label for="left_block_start_col">From</label>
-        <input id="left_block_start_col" type="text" name="left_block_start_col" placeholder="A" maxlength="3" />
+        <input id="left_block_start_col" type="text" name="left_block_start_col" value="A" placeholder="A" maxlength="3" />
       </div>
       <div class="cell">
         <label for="left_block_end_col">To</label>
-        <input id="left_block_end_col" type="text" name="left_block_end_col" placeholder="D" maxlength="3" />
+        <input id="left_block_end_col" type="text" name="left_block_end_col" value="F" placeholder="F" maxlength="3" />
       </div>
       <div class="cell">
         <label for="left_input_col">Match</label>
-        <input id="left_input_col" type="text" name="left_input_col" placeholder="D" maxlength="3" />
+        <input id="left_input_col" type="text" name="left_input_col" value="F" placeholder="F" maxlength="3" />
       </div>
       <div class="cell">
         <label for="left_output_start_col" title="First column where this block is pasted on the new sheet">Out</label>
-        <input id="left_output_start_col" type="text" name="left_output_start_col" placeholder="A" maxlength="3"
+        <input id="left_output_start_col" type="text" name="left_output_start_col" value="A" placeholder="A" maxlength="3"
           title="On the NEW sheet: column where the left block starts (often A)." />
       </div>
     </div>
@@ -140,19 +141,19 @@ HOME_HTML = """
     <div class="col-row">
       <div class="cell">
         <label for="right_block_start_col">From</label>
-        <input id="right_block_start_col" type="text" name="right_block_start_col" placeholder="F" maxlength="3" />
+        <input id="right_block_start_col" type="text" name="right_block_start_col" value="H" placeholder="H" maxlength="3" />
       </div>
       <div class="cell">
         <label for="right_block_end_col">To</label>
-        <input id="right_block_end_col" type="text" name="right_block_end_col" placeholder="H" maxlength="3" />
+        <input id="right_block_end_col" type="text" name="right_block_end_col" value="L" placeholder="L" maxlength="3" />
       </div>
       <div class="cell">
         <label for="right_input_col">Match</label>
-        <input id="right_input_col" type="text" name="right_input_col" placeholder="F" maxlength="3" />
+        <input id="right_input_col" type="text" name="right_input_col" value="H" placeholder="H" maxlength="3" />
       </div>
       <div class="cell">
         <label for="right_output_start_col" title="First column where this block is pasted on the new sheet">Out</label>
-        <input id="right_output_start_col" type="text" name="right_output_start_col" placeholder="F" maxlength="3"
+        <input id="right_output_start_col" type="text" name="right_output_start_col" value="H" placeholder="H" maxlength="3"
           title="On the NEW sheet: column where the right block starts. Auto-shifts right if it would overlap the left block." />
       </div>
     </div>
@@ -166,7 +167,7 @@ HOME_HTML = """
         <label for="diff_output_col"
           title="Column on the new sheet between the two pasted blocks — shows |left − right| for each aligned row">
           Diff col</label>
-        <input id="diff_output_col" type="text" name="diff_output_col" placeholder="E" maxlength="3"
+        <input id="diff_output_col" type="text" name="diff_output_col" value="G" placeholder="G" maxlength="3"
           title="New sheet column (e.g. E) between left and right data. Absolute difference after aligning." />
       </div>
     </div>
