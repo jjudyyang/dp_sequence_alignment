@@ -8,8 +8,9 @@ into alignment via manually inserting rows, checking distances, and copying
 formatting by hand.
 
 <p align="center">
-  <img src="docs/screenshots/shiftline-ui.png" alt="Shiftline spreadsheet alignment UI" width="900">
+  <img src="docs/screenshots/image1.png" alt="project doodle" width="900">
 </p>
+
 
 ## the problem 
 Sensors travel through huge oil pipelines multiple times a year to calculate erosion and perform health checks on kilometers of pipelines.
@@ -19,6 +20,10 @@ Sometimes new welds are added between inspection runs, which changes the sequenc
 Comparing runs of the same section of pipeline - data can have missing rows, extra rows, or values that are close but not equal which is all expected.
 
 Analysts spend hours going through runs, manually shifting entire columns, and recalculating the joint difference for the next shift.
+
+<p align="center">
+  <img src="docs/screenshots/shiftline-ui.png" alt="spreadsheet alignment UI" width="900">
+</p>
 
 
 ## user flow
