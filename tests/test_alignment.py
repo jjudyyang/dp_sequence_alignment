@@ -121,6 +121,47 @@ class AlignmentTests(unittest.TestCase):
                 diff_output_col="B",
             )
 
+    def test_process_excel_rejects_empty_match_column(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "input.xlsx"
+            output_path = tmp_path / "output.xlsx"
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Data"
+            ws["D1"] = "Left distance"
+            ws["F1"] = "Right distance"
+            ws["D2"] = 10.0
+            ws["D3"] = 20.0
+            wb.save(input_path)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "No numeric values found in right match column F on sheet 'Data'",
+            ):
+                process_excel(
+                    input_file=input_path,
+                    output_file=output_path,
+                    input_sheet_name="Data",
+                    left_sheet_name="Data",
+                    right_sheet_name="Data",
+                    output_sheet_name="Aligned",
+                    start_row=2,
+                    header_first_row=1,
+                    header_last_row=1,
+                    left_input_col="D",
+                    left_block_start_col="A",
+                    left_block_end_col="D",
+                    left_output_start_col="A",
+                    right_input_col="F",
+                    right_block_start_col="F",
+                    right_block_end_col="H",
+                    right_output_start_col="F",
+                    threshold=0.25,
+                    diff_output_col="E",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -771,6 +771,7 @@
     function renderSheetSelects() {
       [els.leftSheet, els.rightSheet].forEach((select) => {
         const current = select.value;
+        const fallback = state.workbookFile ? state.data.sheets[0]?.name || "" : "";
         select.innerHTML = [
           '<option value="">Select tab</option>',
           ...state.data.sheets.map((sheet) => {
@@ -779,7 +780,7 @@
         ].join("");
         select.value = state.data.sheets.some((sheet) => sheet.name === current)
           ? current
-          : "";
+          : fallback;
       });
     }
 

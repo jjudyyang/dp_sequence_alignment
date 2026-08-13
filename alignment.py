@@ -318,6 +318,17 @@ def read_column(ws, col_letter, start_row):
     return rows
 
 
+def require_match_values(values, ws, col_letter, side_label, start_row):
+    """Reject mappings that point at an empty or non-numeric match column."""
+    if values:
+        return
+    raise ValueError(
+        f"No numeric values found in {side_label} match column {col_letter} "
+        f"on sheet '{ws.title}' at or below row {start_row}. Choose the sheet "
+        "and column that contain the values to compare."
+    )
+
+
 def is_match(left_value, right_value, threshold=DEFAULT_THRESHOLD):
     """Return True when two numeric values are close enough to align."""
     return abs(left_value - right_value) <= threshold
@@ -578,6 +589,12 @@ def process_excel(
 
     left_values = read_column(left_ws, config.left_input_col, config.start_row)
     right_values = read_column(right_ws, config.right_input_col, config.start_row)
+    require_match_values(
+        left_values, left_ws, config.left_input_col, "left", config.start_row
+    )
+    require_match_values(
+        right_values, right_ws, config.right_input_col, "right", config.start_row
+    )
     alignment = align_with_dp(left_values, right_values, config.threshold)
 
     out_ws = create_output_sheet(workbook, left_ws, right_ws, config)
