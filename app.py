@@ -1,11 +1,15 @@
 from pathlib import Path
+import hashlib
+import hmac
+import os
 import re
+import secrets
 import shutil
 import sqlite3
 import uuid
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from alignment import process_excel
@@ -19,6 +23,10 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 OUTPUT_DIR = BASE_DIR / "outputs"
 DATA_DIR = BASE_DIR / "data"
 USAGE_DB = DATA_DIR / "usage.db"
+APP_PASSWORD = os.getenv("SHIFTLINE_PASSWORD", "judy")
+AUTH_SECRET = os.getenv("SHIFTLINE_AUTH_SECRET", secrets.token_hex(32))
+AUTH_COOKIE_NAME = "shiftline_auth"
+AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -26,6 +34,130 @@ DATA_DIR.mkdir(exist_ok=True)
 
 app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
 app.mount("/data", StaticFiles(directory=FRONTEND_DIR / "data"), name="sample-data")
+
+
+def auth_cookie_value():
+    """Return the signed value accepted for an authenticated browser session."""
+    signature = hmac.new(
+        AUTH_SECRET.encode("utf-8"),
+        b"shiftline-authenticated",
+        hashlib.sha256,
+    ).hexdigest()
+    return f"v1:{signature}"
+
+
+def is_auth_cookie_valid(cookie_value):
+    """Check a submitted auth cookie without leaking timing information."""
+    if not cookie_value:
+        return False
+    return hmac.compare_digest(cookie_value, auth_cookie_value())
+
+
+def is_authenticated(request: Request):
+    """Return whether the incoming request already passed the password gate."""
+    return is_auth_cookie_valid(request.cookies.get(AUTH_COOKIE_NAME))
+
+
+def login_page(error_message: str = ""):
+    """Render the password page without relying on protected static assets."""
+    error_html = (
+        f'<p class="error" role="alert">{error_message}</p>' if error_message else ""
+    )
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shiftline Password</title>
+  <style>
+    * {{ box-sizing: border-box; }}
+    body {{
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      background: #f3f5f7;
+      color: #17212f;
+      font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    main {{
+      width: min(100% - 32px, 360px);
+      padding: 24px;
+      border: 1px solid #d9e0e8;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 12px 28px rgba(23, 33, 47, 0.08);
+    }}
+    h1 {{
+      margin: 0 0 6px;
+      font-size: 20px;
+      line-height: 1.2;
+    }}
+    p {{
+      margin: 0 0 18px;
+      color: #687586;
+    }}
+    label {{
+      display: grid;
+      gap: 6px;
+      color: #4f5d6d;
+      font-size: 12px;
+      font-weight: 650;
+    }}
+    input {{
+      width: 100%;
+      min-height: 40px;
+      border: 1px solid #aab6c5;
+      border-radius: 6px;
+      padding: 0 10px;
+      font: inherit;
+    }}
+    button {{
+      width: 100%;
+      min-height: 40px;
+      margin-top: 14px;
+      border: 1px solid #2458a6;
+      border-radius: 6px;
+      background: #2458a6;
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    .error {{
+      margin: 0 0 12px;
+      color: #b42318;
+      font-weight: 650;
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Shiftline</h1>
+    <p>Enter the password to continue.</p>
+    {error_html}
+    <form method="post" action="/login">
+      <input name="username" type="text" value="shiftline" autocomplete="username" hidden>
+      <label>
+        Password
+        <input name="password" type="password" autocomplete="current-password" autofocus required>
+      </label>
+      <button type="submit">Open Shiftline</button>
+    </form>
+  </main>
+</body>
+</html>"""
+
+
+@app.middleware("http")
+async def require_password(request: Request, call_next):
+    """Protect every Shiftline route except the password form."""
+    if request.url.path in {"/login", "/favicon.ico"} or is_authenticated(request):
+        return await call_next(request)
+    accepts_html = "text/html" in request.headers.get("accept", "")
+    if request.method == "GET" and accepts_html:
+        return RedirectResponse("/login", status_code=303)
+    return JSONResponse({"detail": "Password required."}, status_code=401)
 
 
 def get_usage_count():
@@ -68,6 +200,34 @@ def shifted_download_filename(original_name: str) -> str:
     stem = Path(base).stem.strip() or "workbook"
     stem = re.sub(r'[\x00-\x1f\\/:*?"<>|]', "_", stem)[:180]
     return f"{stem}_shifted.xlsx"
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_form(request: Request):
+    if is_authenticated(request):
+        return RedirectResponse("/", status_code=303)
+    return HTMLResponse(login_page())
+
+
+@app.post("/login")
+def login(request: Request, password: str = Form("")):
+    if not hmac.compare_digest(password, APP_PASSWORD):
+        return HTMLResponse(login_page("Incorrect password."), status_code=401)
+    response = RedirectResponse("/", status_code=303)
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        auth_cookie_value(),
+        max_age=AUTH_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+    )
+    return response
+
+
+@app.get("/favicon.ico")
+def favicon():
+    return Response(status_code=204)
 
 
 @app.get("/", response_class=HTMLResponse)
