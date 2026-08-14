@@ -784,6 +784,121 @@
       });
     }
 
+    function normalizedHeader(value) {
+      return String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+    }
+
+    function colLabel(oneBasedCol) {
+      return numberToCol(oneBasedCol - 1);
+    }
+
+    function setField(id, value) {
+      const field = document.getElementById(id);
+      if (field && value !== null && value !== undefined) field.value = String(value);
+    }
+
+    function resetMappingDefaults() {
+      Object.entries({
+        leftFrom: "A",
+        leftTo: "D",
+        leftMatch: "D",
+        rightFrom: "F",
+        rightTo: "H",
+        rightMatch: "F",
+        diffCol: "E",
+        headerFirst: "1",
+        headerLast: "1",
+        startRow: "2",
+        maxDiff: "0.5",
+      }).forEach(([id, value]) => setField(id, value));
+    }
+
+    function rowByNumber(sheet, rowNumber) {
+      return sheet.previewRows.find((row) => row.rowNumber === rowNumber);
+    }
+
+    function inferSingleSheetMapping(sheet) {
+      if (!sheet) return null;
+      const rows = sheet.previewRows.slice(0, 5);
+      let leftMatch = null;
+      let rightMatch = null;
+      let diffCol = null;
+      let headerLast = null;
+
+      rows.forEach((row) => {
+        row.cells.forEach((cell) => {
+          const text = normalizedHeader(cell.value);
+          if (!text) return;
+          if (!diffCol && (text.includes("diff") || text.includes(" dif"))) {
+            diffCol = cell.col;
+          }
+          if (
+            !leftMatch &&
+            text.includes("target") &&
+            text.includes("joint") &&
+            text.includes("length")
+          ) {
+            leftMatch = cell.col;
+            headerLast = row.rowNumber;
+          }
+        });
+      });
+
+      if (!leftMatch) return null;
+      const searchStart = (diffCol || leftMatch) + 1;
+      for (const row of rows.filter((candidate) => candidate.rowNumber >= headerLast)) {
+        for (const cell of row.cells) {
+          const text = normalizedHeader(cell.value);
+          if (
+            cell.col >= searchStart &&
+            text.includes("joint") &&
+            text.includes("length") &&
+            !text.includes("target") &&
+            !text.includes("dif")
+          ) {
+            rightMatch = cell.col;
+            headerLast = row.rowNumber;
+            break;
+          }
+        }
+        if (rightMatch) break;
+      }
+
+      if (!rightMatch) return null;
+      if (!diffCol) diffCol = leftMatch + 1;
+
+      const headerRow = rowByNumber(sheet, headerLast);
+      const lastHeaderCol = headerRow
+        ? headerRow.cells.reduce((max, cell) => (
+            normalizedHeader(cell.value) ? Math.max(max, cell.col) : max
+          ), rightMatch)
+        : rightMatch;
+      const previousRow = rowByNumber(sheet, headerLast - 1);
+      const hasGroupHeader = previousRow?.cells.some((cell) => {
+        const text = normalizedHeader(cell.value);
+        return text === "current" || text === "previous";
+      });
+
+      return {
+        headerFirst: hasGroupHeader ? headerLast - 1 : headerLast,
+        headerLast,
+        startRow: headerLast + 1,
+        leftFrom: "A",
+        leftTo: colLabel(diffCol - 1),
+        leftMatch: colLabel(leftMatch),
+        rightFrom: colLabel(diffCol + 1),
+        rightTo: colLabel(lastHeaderCol),
+        rightMatch: colLabel(rightMatch),
+        diffCol: colLabel(diffCol),
+      };
+    }
+
+    function applyInferredMapping() {
+      const inferred = inferSingleSheetMapping(state.data.sheets[0]);
+      if (!inferred) return;
+      Object.entries(inferred).forEach(([id, value]) => setField(id, value));
+    }
+
     function updateShiftState() {
       const hasSheets = Boolean(els.leftSheet.value && els.rightSheet.value);
       const ready = Boolean(state.workbookFile && hasSheets && !state.busy);
@@ -916,6 +1031,8 @@
           els.leftSheet.value = "";
           els.rightSheet.value = "";
           els.uploadLabel.textContent = file.name;
+          resetMappingDefaults();
+          applyInferredMapping();
           renderAll();
         } catch (error) {
           state.workbookFile = null;

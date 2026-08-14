@@ -66,6 +66,17 @@ def normalize_column(value, field_name):
     return cleaned
 
 
+def normalize_header_text(value):
+    """Return a compact lowercase header string for loose matching."""
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def header_contains(value, *needles):
+    """Return True when all requested words appear in a normalized cell value."""
+    text = normalize_header_text(value)
+    return bool(text) and all(needle in text for needle in needles)
+
+
 def block_width_cols(start_col, end_col):
     """Return the width of an inclusive Excel column range."""
     return col_to_num(end_col) - col_to_num(start_col) + 1
@@ -329,6 +340,106 @@ def require_match_values(values, ws, col_letter, side_label, start_row):
     )
 
 
+def infer_single_sheet_config(ws, config):
+    """Infer the common Shiftline layout from visible workbook headers."""
+    max_scan_rows = min(ws.max_row, 5)
+    max_scan_cols = ws.max_column
+    left_match = None
+    right_match = None
+    diff_col = None
+    header_last_row = None
+
+    for row in range(1, max_scan_rows + 1):
+        for col in range(1, max_scan_cols + 1):
+            value = ws.cell(row=row, column=col).value
+            text = normalize_header_text(value)
+            if not text:
+                continue
+            if "diff" in text or " dif" in f" {text}":
+                diff_col = diff_col or col
+            if header_contains(value, "target", "joint", "length"):
+                left_match = left_match or col
+                header_last_row = header_last_row or row
+
+    if left_match is None:
+        return None
+
+    search_start = (diff_col or left_match) + 1
+    for row in range(header_last_row or 1, max_scan_rows + 1):
+        for col in range(search_start, max_scan_cols + 1):
+            value = ws.cell(row=row, column=col).value
+            text = normalize_header_text(value)
+            if not text:
+                continue
+            if "joint" in text and "length" in text and "target" not in text:
+                right_match = col
+                header_last_row = row
+                break
+        if right_match is not None:
+            break
+
+    if right_match is None:
+        return None
+
+    if diff_col is None:
+        diff_col = left_match + 1
+
+    header_row = header_last_row or 1
+    header_first_row = header_row
+    if header_row > 1:
+        previous_row_values = [
+            normalize_header_text(ws.cell(row=header_row - 1, column=col).value)
+            for col in range(1, max_scan_cols + 1)
+        ]
+        if any(value in {"current", "previous"} for value in previous_row_values):
+            header_first_row = header_row - 1
+
+    last_header_col = max(
+        (
+            col
+            for col in range(1, max_scan_cols + 1)
+            if ws.cell(row=header_row, column=col).value not in (None, "")
+        ),
+        default=max_scan_cols,
+    )
+
+    left_block_end = max(1, diff_col - 1)
+    right_block_start = diff_col + 1
+    return AlignmentConfig(
+        input_sheet_name=config.input_sheet_name,
+        output_sheet_name=config.output_sheet_name,
+        start_row=header_row + 1,
+        header_first_row=header_first_row,
+        header_last_row=header_row,
+        left_sheet_name=config.left_sheet_name,
+        right_sheet_name=config.right_sheet_name,
+        left_input_col=get_column_letter(left_match),
+        left_block_start_col="A",
+        left_block_end_col=get_column_letter(left_block_end),
+        left_output_start_col="A",
+        right_input_col=get_column_letter(right_match),
+        right_block_start_col=get_column_letter(right_block_start),
+        right_block_end_col=get_column_letter(last_header_col),
+        right_output_start_col=get_column_letter(right_block_start),
+        threshold=config.threshold,
+        diff_output_col=get_column_letter(diff_col),
+    )
+
+
+def should_try_inferred_single_sheet_config(left_ws, right_ws, config):
+    """Limit automatic remapping to same-sheet uploads using the default shape."""
+    return (
+        left_ws is right_ws
+        and config.left_input_col == DEFAULT_LEFT_INPUT_COL
+        and config.right_input_col == DEFAULT_RIGHT_INPUT_COL
+        and config.left_block_start_col == DEFAULT_LEFT_BLOCK_START_COL
+        and config.left_block_end_col == DEFAULT_LEFT_BLOCK_END_COL
+        and config.right_block_start_col == DEFAULT_RIGHT_BLOCK_START_COL
+        and config.right_block_end_col == DEFAULT_RIGHT_BLOCK_END_COL
+        and config.diff_output_col == DEFAULT_DIFF_OUTPUT_COL
+    )
+
+
 def is_match(left_value, right_value, threshold=DEFAULT_THRESHOLD):
     """Return True when two numeric values are close enough to align."""
     return abs(left_value - right_value) <= threshold
@@ -589,6 +700,15 @@ def process_excel(
 
     left_values = read_column(left_ws, config.left_input_col, config.start_row)
     right_values = read_column(right_ws, config.right_input_col, config.start_row)
+    if (
+        (not left_values or not right_values)
+        and should_try_inferred_single_sheet_config(left_ws, right_ws, config)
+    ):
+        inferred_config = infer_single_sheet_config(left_ws, config)
+        if inferred_config is not None:
+            config = inferred_config
+            left_values = read_column(left_ws, config.left_input_col, config.start_row)
+            right_values = read_column(right_ws, config.right_input_col, config.start_row)
     require_match_values(
         left_values, left_ws, config.left_input_col, "left", config.start_row
     )

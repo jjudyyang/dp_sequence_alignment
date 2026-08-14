@@ -162,6 +162,60 @@ class AlignmentTests(unittest.TestCase):
                     diff_output_col="E",
                 )
 
+    def test_process_excel_infers_current_previous_single_sheet_layout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "input.xlsx"
+            output_path = tmp_path / "output.xlsx"
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "sheet1"
+            ws.append([None, "Current", None, None, None, None, None, None, "Previous"])
+            ws.append(
+                [
+                    "Long Seam",
+                    "Pipe Tpe",
+                    "WT",
+                    "Joint #",
+                    "ID",
+                    "Distance [ft]",
+                    "Target Joint Length [ft]",
+                    "Joint Length Dif [ft]",
+                    "Joint Length [ft]",
+                    "Distance [ft]",
+                    "Joint Number",
+                    "WT",
+                    "Pipe Tipe",
+                    "Long seam",
+                    "HCA",
+                ]
+            )
+            ws.append([None, "Valve", 0.219, None, 1, -1.575, 3.118, None, 3.128])
+            ws.append([None, "Tee", None, None, 453, 1.543, 1.154, None, 1.2])
+            wb.save(input_path)
+
+            result = process_excel(
+                input_file=input_path,
+                output_file=output_path,
+                input_sheet_name="sheet1",
+                output_sheet_name="Aligned",
+                threshold=0.25,
+            )
+
+            self.assertEqual(result["left_values"], 2)
+            self.assertEqual(result["right_values"], 2)
+            self.assertEqual(result["matches_written"], 2)
+
+            out_wb = load_workbook(output_path)
+            out_ws = out_wb["Aligned"]
+            self.assertEqual(out_ws.max_column, 15)
+            self.assertEqual(out_ws["G2"].value, "Target Joint Length [ft]")
+            self.assertEqual(out_ws["H2"].value, "Abs diff")
+            self.assertEqual(out_ws["I2"].value, "Joint Length [ft]")
+            self.assertAlmostEqual(out_ws["H3"].value, 0.01)
+            self.assertAlmostEqual(out_ws["H4"].value, 0.046)
+
 
 if __name__ == "__main__":
     unittest.main()
