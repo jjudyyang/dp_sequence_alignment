@@ -233,7 +233,11 @@ def favicon():
 @app.get("/", response_class=HTMLResponse)
 def home():
     index_path = FRONTEND_DIR / "index.html"
-    return HTMLResponse(index_path.read_text(encoding="utf-8"))
+    return HTMLResponse(
+        index_path.read_text(encoding="utf-8").replace(
+            "__USAGE_COUNT__", str(get_usage_count())
+        )
+    )
 
 
 @app.get("/usage")

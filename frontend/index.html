@@ -1,1179 +1,410 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shiftline</title>
-  <link rel="icon" href="/assets/shiftline-logo.png">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Envision - SW</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%98%8A%3C/text%3E%3C/svg%3E">
   <style>
-    :root {
-      --bg: #f3f5f7;
-      --surface: #ffffff;
-      --surface-soft: #f8fafc;
-      --line: #d9e0e8;
-      --line-strong: #aab6c5;
-      --text: #17212f;
-      --muted: #687586;
-      --primary: #2458a6;
-      --primary-dark: #193e77;
-      --green: #117758;
-      --green-soft: #e4f5ee;
-      --amber: #99670f;
-      --amber-soft: #fff1cc;
-      --red: #b42318;
-      --red-soft: #ffe5df;
-      --shadow: 0 12px 28px rgba(23, 33, 47, 0.08);
+    :root { --border: #ddd; --btn: #2563eb; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; font-size: 16px; margin: 0; padding: 20px; max-width: 760px; }
+    h1 { font-size: 1.25rem; margin: 0 0 16px; font-weight: 600; }
+    form { display: flex; flex-direction: column; gap: 14px; }
+    label { display: block; font-size: 0.8rem; color: #444; margin-bottom: 4px; }
+    input[type="text"], input[type="number"], input[type="file"] {
+      width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 15px;
     }
-
-    * {
-      box-sizing: border-box;
+    input::placeholder { color: #9ca3af; }
+    .inline2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
+    .block-title { font-size: 0.85rem; font-weight: 600; margin: 4px 0 0; color: #222; }
+    .col-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      align-items: end;
     }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background: var(--bg);
-      color: var(--text);
-      font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      letter-spacing: 0;
+    .col-row .cell { min-width: 0; }
+    .col-row input { text-align: center; }
+    button[type="submit"] {
+      margin-top: 6px; padding: 12px; font-size: 1rem; font-weight: 600;
+      background: var(--btn); color: #fff; border: none; border-radius: 8px; cursor: pointer;
     }
-
-    button,
-    input,
-    select {
-      font: inherit;
+    button[type="submit"]:hover { filter: brightness(1.06); }
+    button[type="submit"][disabled] { opacity: 0.8; cursor: wait; }
+    .submit-msg { font-size: 0.9rem; color: #374151; min-height: 1.2em; margin-top: 4px; }
+    .preview-msg { font-size: 0.8rem; color: #555; margin: 4px 0 0; min-height: 1.25em; }
+    .preview-holder {
+      overflow: auto; max-height: 300px; border: 1px solid var(--border); border-radius: 6px;
+      margin-top: 6px; background: #fafafa;
     }
-
-    button,
-    .file-picker {
-      min-height: 36px;
-      border: 1px solid var(--line-strong);
+    .preview-holder table { border-collapse: collapse; font-size: 11px; font-family: ui-monospace, monospace; }
+    .preview-holder th,
+    .preview-holder td {
+      border: 1px solid #e8e8e8; padding: 3px 7px;
+      white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis;
+    }
+    .preview-holder th { background: #e5e7eb; font-weight: 600; text-align: center; }
+    .preview-holder .row-num { background: #f3f4f6; text-align: right; }
+    .preview-holder tr:nth-child(even) td { background: #f0f0f0; }
+    .usage-foot { font-size: 0.8rem; color: #6b7280; margin-top: 28px; padding-top: 16px; border-top: 1px solid #eee; }
+    #progress-overlay {
+      display: none; position: fixed; inset: 0; z-index: 100;
+      align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.4);
+      flex-direction: column;
+    }
+    #progress-overlay.is-visible { display: flex; }
+    .progress-modal {
+      background: #fff; border-radius: 12px; padding: 22px 24px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.15); max-width: 22rem; width: 90%;
+    }
+    .progress-modal h2 {
+      margin: 0 0 8px; font-size: 1.05rem; font-weight: 600; color: #111827;
+    }
+    .progress-modal .progress-sub { margin: 0 0 14px; font-size: 0.82rem; color: #6b7280; line-height: 1.35; }
+    .progress-track {
+      height: 11px; border-radius: 6px; background: #e5e7eb;
+      overflow: hidden; margin-bottom: 8px;
+    }
+    .progress-bar-indet {
+      height: 100%; width: 45%;
       border-radius: 6px;
-      background: var(--surface);
-      color: var(--text);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 0 12px;
-      cursor: pointer;
-      white-space: nowrap;
+      background: linear-gradient(90deg, #93c5fd, #2563eb, #93c5fd);
+      animation: prog-slide 1.35s infinite ease-in-out;
     }
-
-    button:hover,
-    .file-picker:hover {
-      background: #fbfcfe;
-      border-color: #8494a8;
+    @keyframes prog-slide {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(280%); }
     }
-
-    button:disabled {
-      cursor: not-allowed;
-      opacity: 0.55;
-    }
-
-    button:focus-visible,
-    input:focus-visible,
-    select:focus-visible,
-    .file-picker:focus-within {
-      outline: 3px solid rgba(36, 88, 166, 0.22);
-      outline-offset: 1px;
-    }
-
-    .primary {
-      border-color: var(--primary);
-      background: var(--primary);
-      color: #ffffff;
-    }
-
-    .primary:hover {
-      border-color: var(--primary-dark);
-      background: var(--primary-dark);
-    }
-
-    .icon {
-      width: 16px;
-      height: 16px;
-      flex: 0 0 auto;
-      stroke: currentColor;
-      stroke-width: 2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      fill: none;
-    }
-
-    .app {
-      min-height: 100vh;
-      display: grid;
-      grid-template-columns: 280px minmax(0, 1fr);
-      grid-template-rows: 58px minmax(0, 1fr);
-    }
-
-    .topbar {
-      grid-column: 1 / -1;
-      background: var(--surface);
-      border-bottom: 1px solid var(--line);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 0 18px;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
-    }
-
-    .mark {
-      width: 44px;
-      height: 36px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      display: block;
-      background: var(--surface);
-      object-fit: contain;
-      padding: 2px;
-    }
-
-    .brand h1 {
-      margin: 0;
-      font-size: 16px;
-      line-height: 1.2;
-    }
-
-    .brand p {
-      margin: 2px 0 0;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.2;
-    }
-
-    .top-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-      overflow: auto;
-    }
-
-    .file-picker input {
-      position: absolute;
-      inline-size: 1px;
-      block-size: 1px;
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    .panel {
-      min-width: 0;
-      background: var(--surface);
-      overflow: auto;
-    }
-
-    .left-panel {
-      border-right: 1px solid var(--line);
-    }
-
-    .section {
-      padding: 18px;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .section:last-child {
-      border-bottom: 0;
-    }
-
-    .section-title {
-      margin: 0 0 12px;
-      color: #4f5d6d;
-      font-size: 12px;
-      line-height: 1.2;
-      font-weight: 750;
-      text-transform: uppercase;
-    }
-
-    .meta-grid {
-      display: grid;
-      gap: 8px;
-    }
-
-    .meta-row {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .meta-row strong {
-      color: var(--text);
-      font-weight: 650;
-      text-align: right;
-      overflow-wrap: anywhere;
-    }
-
-    .source-link {
-      color: var(--primary);
-      text-decoration: none;
-    }
-
-    .source-link:hover {
-      text-decoration: underline;
-    }
-
-    .mapping {
-      display: grid;
-      gap: 10px;
-    }
-
-    .settings-row {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-    }
-
-    .map-row {
-      display: grid;
-      grid-template-columns: 44px minmax(0, 1fr);
-      gap: 8px;
-      align-items: center;
-    }
-
-    .side-token {
-      min-height: 30px;
-      border-radius: 6px;
-      display: grid;
-      place-items: center;
-      font-size: 12px;
-      font-weight: 750;
-    }
-
-    .side-token.left {
-      background: #e8f0fb;
-      color: var(--primary-dark);
-    }
-
-    .side-token.right {
-      background: var(--green-soft);
-      color: #0d5a43;
-    }
-
-    .map-inputs {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 6px;
-    }
-
-    .field {
-      display: grid;
-      gap: 5px;
-    }
-
-    label {
-      color: #4f5d6d;
-      font-size: 12px;
-      line-height: 1.2;
-      font-weight: 650;
-    }
-
-    input,
-    select {
-      width: 100%;
-      min-height: 36px;
-      border: 1px solid var(--line-strong);
-      border-radius: 6px;
-      background: var(--surface);
-      color: var(--text);
-      padding: 0 10px;
-    }
-
-    .workspace {
-      min-width: 0;
-      display: grid;
-      grid-template-rows: auto minmax(0, 1fr) auto;
-      overflow: hidden;
-    }
-
-    .tabs {
-      min-height: 48px;
-      padding: 8px 18px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--line);
-      overflow: auto;
-    }
-
-    .tab {
-      min-height: 32px;
-      border-color: var(--line);
-      color: var(--muted);
-    }
-
-    .tab.active {
-      border-color: var(--primary);
-      background: #e8f0fb;
-      color: var(--primary-dark);
-      font-weight: 700;
-    }
-
-    .table-zone {
-      min-height: 0;
-      padding: 18px;
-      display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
-      gap: 12px;
-      overflow: hidden;
-    }
-
-    .table-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      min-width: 0;
-    }
-
-    .table-title {
-      margin: 0;
-      font-size: 15px;
-      line-height: 1.2;
-    }
-
-    .range-label {
-      color: var(--muted);
-      font-size: 12px;
-      white-space: nowrap;
-    }
-
-    .sheet-frame {
-      min-height: 0;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--surface);
-      box-shadow: var(--shadow);
-      overflow: auto;
-    }
-
-    table.sheet {
-      border-collapse: collapse;
-      table-layout: fixed;
-      width: 100%;
-      min-width: 900px;
-      font-size: 12px;
-    }
-
-    .sheet th,
-    .sheet td {
-      min-width: 118px;
-      max-width: 240px;
-      height: 34px;
-      border: 1px solid #e2e7ee;
-      padding: 6px 8px;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      vertical-align: middle;
-    }
-
-    .sheet th {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-      background: #eef2f6;
-      color: #4f5d6d;
-      text-align: center;
-      font-weight: 750;
-    }
-
-    .sheet .row-head {
-      position: sticky;
-      left: 0;
-      z-index: 3;
-      min-width: 54px;
-      max-width: 54px;
-      background: #eef2f6;
-      color: #647182;
-      text-align: center;
-      font-weight: 700;
-    }
-
-    .sheet td.match-left,
-    .legend-chip.match-left {
-      box-shadow: inset 0 0 0 2px rgba(36, 88, 166, 0.32);
-    }
-
-    .sheet td.match-right,
-    .legend-chip.match-right {
-      box-shadow: inset 0 0 0 2px rgba(17, 119, 88, 0.32);
-    }
-
-    .sheet td.diff-col,
-    .legend-chip.diff-col {
-      background: var(--amber-soft) !important;
-    }
-
-    .legend {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .legend-chip {
-      min-height: 24px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 0 8px;
-      background: var(--surface);
-    }
-
-    .footer {
-      min-height: 48px;
-      border-top: 1px solid var(--line);
-      background: var(--surface);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 0 18px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .footer strong {
-      color: var(--text);
-      font-weight: 700;
-    }
-
-    @media (max-width: 1180px) {
-      .app {
-        grid-template-columns: 250px minmax(0, 1fr);
-      }
-    }
-
-    @media (max-width: 760px) {
-      .app {
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: auto auto minmax(0, 1fr);
-      }
-
-      .topbar {
-        align-items: flex-start;
-        flex-direction: column;
-        padding: 12px;
-      }
-
-      .left-panel {
-        display: none;
-      }
-
-      .table-zone {
-        padding: 12px;
-      }
-
-      .footer {
-        align-items: flex-start;
-        flex-direction: column;
-        padding: 12px;
-      }
-    }
+    .progress-hint { font-size: 0.78rem; color: #9ca3af; margin: 0; }
   </style>
 </head>
 <body>
-  <div class="app">
-    <header class="topbar">
-      <div class="brand">
-        <img class="mark" src="assets/shiftline-logo.png" alt="Shiftline">
-        <div>
-          <h1>Shiftline</h1>
-          <p>Excel alignment preview</p>
-        </div>
-      </div>
-      <div class="top-actions">
-        <label class="file-picker" title="Load workbook values">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <path d="M17 8l-5-5-5 5"></path>
-            <path d="M12 3v12"></path>
-          </svg>
-          <span id="uploadLabel">Upload Sheets</span>
-          <input id="workbookFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-        </label>
-        <button type="button" class="primary" id="runPreview">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <polygon points="7 4 19 12 7 20 7 4"></polygon>
-          </svg>
-          Shift
-        </button>
-      </div>
-    </header>
-
-    <aside class="panel left-panel">
-      <section class="section">
-        <h2 class="section-title">Workbook</h2>
-        <div class="meta-grid" id="workbookMeta"></div>
-      </section>
-
-      <section class="section">
-        <h2 class="section-title">Sheet Pair</h2>
-        <div class="mapping">
-          <div class="field">
-            <label for="leftSheet">Left tab</label>
-            <select id="leftSheet" required></select>
-          </div>
-          <div class="field">
-            <label for="rightSheet">Right tab</label>
-            <select id="rightSheet" required></select>
-          </div>
-        </div>
-      </section>
-
-      <section class="section">
-        <h2 class="section-title">Column Mapping</h2>
-        <div class="mapping">
-          <div class="map-row">
-            <div class="side-token left">Left</div>
-            <div class="map-inputs">
-              <div class="field">
-                <label for="leftFrom">From</label>
-                <input id="leftFrom" value="A">
-              </div>
-              <div class="field">
-                <label for="leftTo">To</label>
-                <input id="leftTo" value="D">
-              </div>
-              <div class="field">
-                <label for="leftMatch">Match</label>
-                <input id="leftMatch" value="D">
-              </div>
-            </div>
-          </div>
-          <div class="map-row">
-            <div class="side-token right">Right</div>
-            <div class="map-inputs">
-              <div class="field">
-                <label for="rightFrom">From</label>
-                <input id="rightFrom" value="F">
-              </div>
-              <div class="field">
-                <label for="rightTo">To</label>
-                <input id="rightTo" value="H">
-              </div>
-              <div class="field">
-                <label for="rightMatch">Match</label>
-                <input id="rightMatch" value="F">
-              </div>
-            </div>
-          </div>
-          <div class="field">
-            <label for="diffCol">Diff column</label>
-            <input id="diffCol" value="E">
-          </div>
-        </div>
-      </section>
-
-      <section class="section">
-        <h2 class="section-title">Run Settings</h2>
-        <div class="mapping">
-          <div class="field">
-            <label for="outputSheet">Output sheet</label>
-            <input id="outputSheet" value="Aligned results">
-          </div>
-          <div class="settings-row">
-            <div class="field">
-              <label for="headerFirst">Header from</label>
-              <input id="headerFirst" type="number" min="1" value="1">
-            </div>
-            <div class="field">
-              <label for="headerLast">Header to</label>
-              <input id="headerLast" type="number" min="1" value="1">
-            </div>
-            <div class="field">
-              <label for="startRow">Data row</label>
-              <input id="startRow" type="number" min="1" value="2">
-            </div>
-          </div>
-          <div class="field">
-            <label for="maxDiff">Max diff</label>
-            <input id="maxDiff" type="number" step="0.001" value="0.5">
-          </div>
-        </div>
-      </section>
-    </aside>
-
-    <main class="workspace">
-      <nav class="tabs" id="sheetTabs" aria-label="Workbook sheets"></nav>
-
-      <section class="table-zone">
-        <div class="table-head">
-          <h2 class="table-title" id="sheetTitle">Workbook Preview</h2>
-          <div class="legend">
-            <span class="legend-chip match-left">Left match</span>
-            <span class="legend-chip match-right">Right match</span>
-            <span class="legend-chip diff-col">Diff</span>
-          </div>
-          <span class="range-label" id="rangeLabel">A1</span>
-        </div>
-        <div class="sheet-frame" tabindex="0">
-          <table class="sheet" id="sheetTable"></table>
-        </div>
-      </section>
-
-      <footer class="footer">
-        <span id="statusLine">Ready</span>
-        <span id="generatedLine"></span>
-      </footer>
-    </main>
-
+  <div id="progress-overlay" role="dialog" aria-modal="true" aria-labelledby="prog-title" aria-hidden="true">
+    <div class="progress-modal">
+      <h2 id="prog-title">Working on your file…</h2>
+      <p class="progress-sub">We can’t estimate time—it depends on file size. Please keep this tab open.</p>
+      <div class="progress-track"><div class="progress-bar-indet"></div></div>
+      <p class="progress-hint">Indeterminate progress (processing on the server)</p>
+    </div>
   </div>
 
+  <h1>Align spreadsheet</h1>
+  <form id="align-form" action="/process" method="post" enctype="multipart/form-data">
+    <div>
+      <label for="file">File</label>
+      <input id="file" type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
+      <p id="preview-msg" class="preview-msg"></p>
+      <div id="preview-holder" class="preview-holder"></div>
+    </div>
+    <div class="inline2">
+      <div>
+        <label for="input_sheet_name">Sheet in</label>
+        <input id="input_sheet_name" type="text" name="input_sheet_name" placeholder="sheet1" autocomplete="off" />
+      </div>
+      <div>
+        <label for="output_sheet_name">Sheet out</label>
+        <input id="output_sheet_name" type="text" name="output_sheet_name" placeholder="Aligned results" autocomplete="off" />
+      </div>
+    </div>
+    <div class="inline2">
+      <div>
+        <label for="header_first_row">Header from</label>
+        <input id="header_first_row" type="number" name="header_first_row" value="1" placeholder="1" min="1" />
+      </div>
+      <div>
+        <label for="header_last_row">Header to</label>
+        <input id="header_last_row" type="number" name="header_last_row" value="2" placeholder="2" min="1" />
+      </div>
+    </div>
+    <div>
+      <label for="start_row">Data row — first row with numbers to match</label>
+      <input id="start_row" type="number" name="start_row" value="3" placeholder="3" min="1" />
+    </div>
+
+    <p class="block-title">Left</p>
+    <div class="col-row">
+      <div class="cell">
+        <label for="left_block_start_col">From</label>
+        <input id="left_block_start_col" type="text" name="left_block_start_col" value="A" placeholder="A" maxlength="3" />
+      </div>
+      <div class="cell">
+        <label for="left_block_end_col">To</label>
+        <input id="left_block_end_col" type="text" name="left_block_end_col" value="F" placeholder="F" maxlength="3" />
+      </div>
+      <div class="cell">
+        <label for="left_input_col">Match</label>
+        <input id="left_input_col" type="text" name="left_input_col" value="F" placeholder="F" maxlength="3" />
+      </div>
+      <div class="cell">
+        <label for="left_output_start_col" title="First column where this block is pasted on the new sheet">Out</label>
+        <input id="left_output_start_col" type="text" name="left_output_start_col" value="A" placeholder="A" maxlength="3"
+          title="On the NEW sheet: column where the left block starts (often A)." />
+      </div>
+    </div>
+
+    <p class="block-title">Right</p>
+    <div class="col-row">
+      <div class="cell">
+        <label for="right_block_start_col">From</label>
+        <input id="right_block_start_col" type="text" name="right_block_start_col" value="H" placeholder="H" maxlength="3" />
+      </div>
+      <div class="cell">
+        <label for="right_block_end_col">To</label>
+        <input id="right_block_end_col" type="text" name="right_block_end_col" value="L" placeholder="L" maxlength="3" />
+      </div>
+      <div class="cell">
+        <label for="right_input_col">Match</label>
+        <input id="right_input_col" type="text" name="right_input_col" value="H" placeholder="H" maxlength="3" />
+      </div>
+      <div class="cell">
+        <label for="right_output_start_col" title="First column where this block is pasted on the new sheet">Out</label>
+        <input id="right_output_start_col" type="text" name="right_output_start_col" value="H" placeholder="H" maxlength="3"
+          title="On the NEW sheet: column where the right block starts. Auto-shifts right if it would overlap the left block." />
+      </div>
+    </div>
+
+    <div class="inline2">
+      <div>
+        <label for="threshold" title="Match if amounts are closer than this">Max diff</label>
+        <input id="threshold" type="number" step="0.001" name="threshold" value="0.5" placeholder="0.5" />
+      </div>
+      <div>
+        <label for="diff_output_col"
+          title="Column on the new sheet between the two pasted blocks — shows |left − right| for each aligned row">
+          Diff col</label>
+        <input id="diff_output_col" type="text" name="diff_output_col" value="G" placeholder="G" maxlength="3"
+          title="New sheet column (e.g. E) between left and right data. Absolute difference after aligning." />
+      </div>
+    </div>
+
+    <button id="submit-btn" type="submit">Download</button>
+    <p id="submit-msg" class="submit-msg"></p>
+  </form>
+
+  <p class="usage-foot">Successful runs: <strong id="usage-count">__USAGE_COUNT__</strong></p>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" crossorigin="anonymous"></script>
-  <script src="data/sample-workbook.js"></script>
   <script>
-    const sampleData = window.WELD_SHIFT_SAMPLE;
-    const state = {
-      data: sampleData,
-      activeSheet: sampleData.sheets[0],
-      workbookFile: null,
-      usageRuns: null,
-      busy: false,
-    };
+  (function () {
+    var fileEl = document.getElementById("file");
+    var sheetNameEl = document.getElementById("input_sheet_name");
+    var previewMsg = document.getElementById("preview-msg");
+    var previewHolder = document.getElementById("preview-holder");
+    var MAX_R = 45;
+    var MAX_C = 16;
 
-    const els = {
-      workbookFile: document.getElementById("workbookFile"),
-      uploadLabel: document.getElementById("uploadLabel"),
-      workbookMeta: document.getElementById("workbookMeta"),
-      sheetTabs: document.getElementById("sheetTabs"),
-      sheetTable: document.getElementById("sheetTable"),
-      sheetTitle: document.getElementById("sheetTitle"),
-      rangeLabel: document.getElementById("rangeLabel"),
-      statusLine: document.getElementById("statusLine"),
-      generatedLine: document.getElementById("generatedLine"),
-      leftSheet: document.getElementById("leftSheet"),
-      rightSheet: document.getElementById("rightSheet"),
-      runPreview: document.getElementById("runPreview"),
-    };
-    const shiftButtonIdleHtml = els.runPreview.innerHTML;
-
-    const fieldIds = [
-      "leftFrom",
-      "leftTo",
-      "leftMatch",
-      "rightFrom",
-      "rightTo",
-      "rightMatch",
-      "diffCol",
-      "outputSheet",
-      "headerFirst",
-      "headerLast",
-      "startRow",
-      "maxDiff",
-    ];
-    const mappingInputs = fieldIds.map((id) => document.getElementById(id));
-
-    function html(value) {
-      return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;");
+    function pickSheet(wb, name) {
+      var names = wb.SheetNames;
+      if (!name) return names[0];
+      if (names.indexOf(name) >= 0) return name;
+      var lower = name.toLowerCase();
+      for (var i = 0; i < names.length; i++) {
+        if (names[i].toLowerCase() === lower) return names[i];
+      }
+      return names[0];
     }
 
-    function valueOf(id) {
-      return String(document.getElementById(id).value || "").trim();
-    }
-
-    function upperValue(id, fallback) {
-      return (valueOf(id) || fallback).toUpperCase();
-    }
-
-    function colToNumber(col) {
-      return String(col || "")
-        .trim()
-        .toUpperCase()
-        .split("")
-        .reduce((sum, letter) => {
-          const code = letter.charCodeAt(0);
-          if (code < 65 || code > 90) return sum;
-          return sum * 26 + code - 64;
-        }, 0);
-    }
-
-    function numberToCol(num) {
-      let n = num + 1;
-      let label = "";
+    function toColLabel(idx) {
+      var n = idx + 1;
+      var s = "";
       while (n > 0) {
-        const rem = (n - 1) % 26;
-        label = String.fromCharCode(65 + rem) + label;
+        var rem = (n - 1) % 26;
+        s = String.fromCharCode(65 + rem) + s;
         n = Math.floor((n - 1) / 26);
       }
-      return label;
+      return s;
     }
 
-    function styleToCss(style) {
-      const css = [];
-      const fill = style?.fill?.color;
-      const font = style?.font;
-      const align = style?.alignment;
-      if (fill && fill.startsWith("#")) css.push(`background-color:${fill}`);
-      if (font?.color && font.color.startsWith("#")) css.push(`color:${font.color}`);
-      if (font?.bold) css.push("font-weight:700");
-      if (font?.italic) css.push("font-style:italic");
-      if (align?.horizontal) css.push(`text-align:${align.horizontal}`);
-      if (align?.wrapText) css.push("white-space:normal");
-      return css.join(";");
-    }
-
-    function valueLabel(value) {
-      if (value === null || value === undefined) return "";
-      if (typeof value === "number") {
-        return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
-      }
-      return String(value);
-    }
-
-    function metaRow(label, value, href) {
-      const rendered = href
-        ? `<a class="source-link" href="${html(href)}" target="_blank" rel="noreferrer">${html(value)}</a>`
-        : html(value);
-      return `<div class="meta-row"><span>${html(label)}</span><strong>${rendered}</strong></div>`;
-    }
-
-    function renderMeta() {
-      const data = state.data;
-      const rows = [
-        metaRow("File", data.source.fileName),
-        metaRow("Sheets", data.workbook.sheetCount),
-      ];
-      if (data.source.driveUrl) {
-        rows.push(metaRow("Source", "Drive file", data.source.driveUrl));
-      } else {
-        rows.push(metaRow("Source", "Local upload"));
-      }
-      if (state.usageRuns !== null) {
-        rows.push(metaRow("Runs", state.usageRuns));
-      }
-      els.workbookMeta.innerHTML = rows.join("");
-      els.generatedLine.textContent = data.generatedAt
-        ? `Preview generated ${new Date(data.generatedAt).toLocaleString()}`
-        : "";
-    }
-
-    function renderSheetSelects() {
-      [els.leftSheet, els.rightSheet].forEach((select) => {
-        const current = select.value;
-        const fallback = state.workbookFile ? state.data.sheets[0]?.name || "" : "";
-        select.innerHTML = [
-          '<option value="">Select tab</option>',
-          ...state.data.sheets.map((sheet) => {
-            return `<option value="${html(sheet.name)}">${html(sheet.name)}</option>`;
-          }),
-        ].join("");
-        select.value = state.data.sheets.some((sheet) => sheet.name === current)
-          ? current
-          : fallback;
-      });
-    }
-
-    function normalizedHeader(value) {
-      return String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-    }
-
-    function colLabel(oneBasedCol) {
-      return numberToCol(oneBasedCol - 1);
-    }
-
-    function setField(id, value) {
-      const field = document.getElementById(id);
-      if (field && value !== null && value !== undefined) field.value = String(value);
-    }
-
-    function resetMappingDefaults() {
-      Object.entries({
-        leftFrom: "A",
-        leftTo: "D",
-        leftMatch: "D",
-        rightFrom: "F",
-        rightTo: "H",
-        rightMatch: "F",
-        diffCol: "E",
-        headerFirst: "1",
-        headerLast: "1",
-        startRow: "2",
-        maxDiff: "0.5",
-      }).forEach(([id, value]) => setField(id, value));
-    }
-
-    function rowByNumber(sheet, rowNumber) {
-      return sheet.previewRows.find((row) => row.rowNumber === rowNumber);
-    }
-
-    function inferSingleSheetMapping(sheet) {
-      if (!sheet) return null;
-      const rows = sheet.previewRows.slice(0, 5);
-      let leftMatch = null;
-      let rightMatch = null;
-      let diffCol = null;
-      let headerLast = null;
-
-      rows.forEach((row) => {
-        row.cells.forEach((cell) => {
-          const text = normalizedHeader(cell.value);
-          if (!text) return;
-          if (!diffCol && (text.includes("diff") || text.includes(" dif"))) {
-            diffCol = cell.col;
-          }
-          if (
-            !leftMatch &&
-            text.includes("target") &&
-            text.includes("joint") &&
-            text.includes("length")
-          ) {
-            leftMatch = cell.col;
-            headerLast = row.rowNumber;
-          }
-        });
-      });
-
-      if (!leftMatch) return null;
-      const searchStart = (diffCol || leftMatch) + 1;
-      for (const row of rows.filter((candidate) => candidate.rowNumber >= headerLast)) {
-        for (const cell of row.cells) {
-          const text = normalizedHeader(cell.value);
-          if (
-            cell.col >= searchStart &&
-            text.includes("joint") &&
-            text.includes("length") &&
-            !text.includes("target") &&
-            !text.includes("dif")
-          ) {
-            rightMatch = cell.col;
-            headerLast = row.rowNumber;
-            break;
-          }
-        }
-        if (rightMatch) break;
-      }
-
-      if (!rightMatch) return null;
-      if (!diffCol) diffCol = leftMatch + 1;
-
-      const headerRow = rowByNumber(sheet, headerLast);
-      const lastHeaderCol = headerRow
-        ? headerRow.cells.reduce((max, cell) => (
-            normalizedHeader(cell.value) ? Math.max(max, cell.col) : max
-          ), rightMatch)
-        : rightMatch;
-      const previousRow = rowByNumber(sheet, headerLast - 1);
-      const hasGroupHeader = previousRow?.cells.some((cell) => {
-        const text = normalizedHeader(cell.value);
-        return text === "current" || text === "previous";
-      });
-
-      return {
-        headerFirst: hasGroupHeader ? headerLast - 1 : headerLast,
-        headerLast,
-        startRow: headerLast + 1,
-        leftFrom: "A",
-        leftTo: colLabel(diffCol - 1),
-        leftMatch: colLabel(leftMatch),
-        rightFrom: colLabel(diffCol + 1),
-        rightTo: colLabel(lastHeaderCol),
-        rightMatch: colLabel(rightMatch),
-        diffCol: colLabel(diffCol),
-      };
-    }
-
-    function applyInferredMapping() {
-      const inferred = inferSingleSheetMapping(state.data.sheets[0]);
-      if (!inferred) return;
-      Object.entries(inferred).forEach(([id, value]) => setField(id, value));
-    }
-
-    function updateShiftState() {
-      const hasSheets = Boolean(els.leftSheet.value && els.rightSheet.value);
-      const ready = Boolean(state.workbookFile && hasSheets && !state.busy);
-      els.runPreview.disabled = !ready;
-      if (state.busy) return;
-      if (!state.workbookFile) {
-        els.statusLine.textContent = "Upload a workbook to shift.";
-      } else if (!hasSheets) {
-        els.statusLine.textContent = "Select a left tab and right tab to shift.";
-      } else {
-        els.statusLine.textContent =
-          `Ready to shift ${els.leftSheet.value} against ${els.rightSheet.value}.`;
-      }
-    }
-
-    function renderTabs() {
-      els.sheetTabs.innerHTML = state.data.sheets.map((sheet) => {
-        const active = sheet.name === state.activeSheet.name ? " active" : "";
-        return `<button class="tab${active}" type="button" data-sheet="${html(sheet.name)}">${html(sheet.name)}</button>`;
-      }).join("");
-
-      els.sheetTabs.querySelectorAll("button").forEach((button) => {
-        button.addEventListener("click", () => {
-          const nextSheet = state.data.sheets.find((sheet) => sheet.name === button.dataset.sheet);
-          if (nextSheet) state.activeSheet = nextSheet;
-          renderAll();
-        });
-      });
-    }
-
-    function cellClass(cell) {
-      const classes = [];
-      const col = cell.col;
-      if (col === colToNumber(valueOf("leftMatch"))) classes.push("match-left");
-      if (col === colToNumber(valueOf("rightMatch"))) classes.push("match-right");
-      if (col === colToNumber(valueOf("diffCol"))) classes.push("diff-col");
-      return classes.join(" ");
-    }
-
-    function renderTable() {
-      const sheet = state.activeSheet || state.data.sheets[0];
-      const cols = sheet.previewCols.length ? sheet.previewCols : ["A"];
-      const header = [
-        '<thead><tr><th class="row-head">#</th>',
-        ...cols.map((col) => `<th>${html(col)}</th>`),
-        "</tr></thead>",
-      ].join("");
-
-      const body = sheet.previewRows.map((row) => {
-        const cells = row.cells.map((cell) => {
-          const style = state.data.styles[cell.styleKey];
-          const css = styleToCss(style);
-          return `<td class="${cellClass(cell)}" style="${html(css)}">${html(valueLabel(cell.value))}</td>`;
-        }).join("");
-        return `<tr><td class="row-head">${row.rowNumber}</td>${cells}</tr>`;
-      }).join("");
-
-      els.sheetTable.innerHTML = `${header}<tbody>${body}</tbody>`;
-      els.sheetTitle.textContent = sheet.name;
-      els.rangeLabel.textContent = `A1:${cols[cols.length - 1]}${sheet.previewRows.length}`;
-    }
-
-    function renderAll() {
-      renderMeta();
-      renderSheetSelects();
-      renderTabs();
-      renderTable();
-      updateShiftState();
-    }
-
-    function buildPreviewData(workbook, file) {
-      const maxRows = 80;
-      const maxCols = 16;
-      const sheets = workbook.SheetNames.map((name) => {
-        const worksheet = workbook.Sheets[name];
-        const rows = XLSX.utils.sheet_to_json(worksheet, {
-          header: 1,
-          defval: "",
-          raw: true,
-        });
-        const rowCount = Math.min(rows.length, maxRows);
-        let colCount = 1;
-        for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-          colCount = Math.max(colCount, (rows[rowIndex] || []).length);
-        }
-        colCount = Math.min(colCount, maxCols);
-        const previewCols = Array.from({ length: colCount }, (_, index) => numberToCol(index));
-        const previewRows = Array.from({ length: rowCount }, (_, rowIndex) => {
-          const row = rows[rowIndex] || [];
-          return {
-            rowNumber: rowIndex + 1,
-            cells: previewCols.map((_, colIndex) => ({
-              row: rowIndex + 1,
-              col: colIndex + 1,
-              value: row[colIndex] === undefined ? null : row[colIndex],
-              styleKey: null,
-            })),
-          };
-        });
-        return { name, previewCols, previewRows };
-      });
-
-      return {
-        generatedAt: new Date().toISOString(),
-        source: {
-          fileName: file.name,
-          driveUrl: null,
-        },
-        workbook: {
-          sheetCount: sheets.length,
-        },
-        sheets,
-        styles: {},
-      };
-    }
-
-    function loadWorkbookFile(file) {
-      if (!file) return;
-      if (typeof XLSX === "undefined") {
-        els.statusLine.textContent = "Workbook parser did not load.";
+    function renderPreview(wb, sheetName) {
+      var ws = wb.Sheets[sheetName];
+      if (!ws) {
+        previewMsg.textContent = "Preview: sheet not found.";
+        previewHolder.innerHTML = "";
         return;
       }
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const workbook = XLSX.read(new Uint8Array(event.target.result), { type: "array" });
-          state.workbookFile = file;
-          state.data = buildPreviewData(workbook, file);
-          state.activeSheet = state.data.sheets[0];
-          els.leftSheet.value = "";
-          els.rightSheet.value = "";
-          els.uploadLabel.textContent = file.name;
-          resetMappingDefaults();
-          applyInferredMapping();
-          renderAll();
-        } catch (error) {
-          state.workbookFile = null;
-          els.uploadLabel.textContent = "Upload Sheets";
-          els.statusLine.textContent = "Could not read this workbook.";
-          updateShiftState();
+      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+      var table = document.createElement("table");
+      var thead = document.createElement("thead");
+      var tbody = document.createElement("tbody");
+      var rowCount = Math.min(rows.length, MAX_R);
+      var maxCols = 0;
+      for (var i = 0; i < rowCount; i++) {
+        maxCols = Math.max(maxCols, (rows[i] || []).length);
+      }
+      var colCount = Math.min(Math.max(maxCols, 1), MAX_C);
+
+      var headTr = document.createElement("tr");
+      var corner = document.createElement("th");
+      corner.textContent = "#";
+      headTr.appendChild(corner);
+      for (var hc = 0; hc < colCount; hc++) {
+        var h = document.createElement("th");
+        h.textContent = toColLabel(hc);
+        headTr.appendChild(h);
+      }
+      thead.appendChild(headTr);
+
+      for (var r = 0; r < rowCount; r++) {
+        var tr = document.createElement("tr");
+        var rowHead = document.createElement("th");
+        rowHead.className = "row-num";
+        rowHead.textContent = String(r + 1);
+        tr.appendChild(rowHead);
+        var row = rows[r] || [];
+        for (var c = 0; c < colCount; c++) {
+          var td = document.createElement("td");
+          var v = row[c];
+          td.textContent = v == null ? "" : String(v);
+          tr.appendChild(td);
         }
-      };
-      reader.readAsArrayBuffer(file);
+        tbody.appendChild(tr);
+      }
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      previewHolder.innerHTML = "";
+      previewHolder.appendChild(table);
+      var note = rows.length > MAX_R ? " (first " + MAX_R + " of " + rows.length + " rows)" : "";
+      previewMsg.textContent = "Preview · " + sheetName + note;
     }
 
-    function parseFilename(contentDisposition) {
-      if (!contentDisposition) return "shifted_output.xlsx";
-      const utf8Marker = "filename*=utf-8''";
-      const lower = contentDisposition.toLowerCase();
-      const markerIndex = lower.indexOf(utf8Marker);
-      if (markerIndex >= 0) {
-        const rest = contentDisposition.slice(markerIndex + utf8Marker.length).trim();
-        const end = rest.indexOf(";");
-        const encoded = end >= 0 ? rest.slice(0, end).trim() : rest;
-        try {
-          return decodeURIComponent(encoded);
-        } catch (error) {}
+    var cachedWB = null;
+
+    /** Re-read Excel from disk (slow). Only do this when the user picks a new file. */
+    function parseFileAndCache(cb) {
+      cachedWB = null;
+      previewMsg.textContent = "";
+      previewHolder.innerHTML = "";
+      var f = fileEl.files && fileEl.files[0];
+      if (!f) return;
+      if (typeof XLSX === "undefined") {
+        previewMsg.textContent = "Preview unavailable (spreadsheet parser did not load).";
+        return;
       }
-      const quoted = contentDisposition.match(/filename="([^"]+)"/i);
-      if (quoted && quoted[1]) return quoted[1];
-      const plain = contentDisposition.match(/filename=([^;\s]+)/i);
-      if (plain && plain[1]) return plain[1].replace(/^["']|["']$/g, "").trim();
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          cachedWB = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+          if (typeof cb === "function") cb();
+          else redrawPreviewOnly();
+        } catch (err) {
+          previewMsg.textContent = "Could not preview this file.";
+          previewHolder.innerHTML = "";
+          cachedWB = null;
+        }
+      };
+      reader.readAsArrayBuffer(f);
+    }
+
+    /** Cheap: reuse parsed workbook — only Sheet in text changes (no glitch while typing). */
+    function redrawPreviewOnly() {
+      if (!cachedWB) return;
+      try {
+        var name = pickSheet(cachedWB, (sheetNameEl.value || "").trim());
+        renderPreview(cachedWB, name);
+      } catch (err) {
+        previewMsg.textContent = "Could not update preview.";
+        previewHolder.innerHTML = "";
+      }
+    }
+
+    var sheetDeb = null;
+
+    function scheduleSheetRedraw() {
+      if (sheetDeb) window.clearTimeout(sheetDeb);
+      sheetDeb = window.setTimeout(function () {
+        sheetDeb = null;
+        redrawPreviewOnly();
+      }, 380);
+    }
+
+    fileEl.addEventListener("change", function () {
+      parseFileAndCache();
+    });
+    sheetNameEl.addEventListener("input", function () {
+      if (fileEl.files && fileEl.files[0] && cachedWB) scheduleSheetRedraw();
+    });
+
+    var formEl = document.getElementById("align-form");
+    var submitBtn = document.getElementById("submit-btn");
+    var submitMsg = document.getElementById("submit-msg");
+    var progOverlay = document.getElementById("progress-overlay");
+
+    function showProgress(show) {
+      progOverlay.classList.toggle("is-visible", !!show);
+      progOverlay.setAttribute("aria-hidden", show ? "false" : "true");
+    }
+
+    function parseFilename(cd) {
+      if (!cd) return "shifted_output.xlsx";
+      var low = cd.toLowerCase();
+      var mime = low.indexOf("filename*=utf-8''");
+      if (mime >= 0) {
+        var rest = cd.slice(mime + 17).trim();
+        var end = rest.indexOf(";");
+        var encoded = end >= 0 ? rest.slice(0, end).trim() : rest;
+        try { return decodeURIComponent(encoded); } catch (e2) {}
+      }
+      var dq = cd.match(/filename="([^"]+)"/i);
+      if (dq && dq[1]) return dq[1];
+      var fq = cd.match(/filename=([^;\s]+)/i);
+      if (fq && fq[1]) return fq[1].replace(/^["']|["']$/g, "").trim();
       return "shifted_output.xlsx";
     }
 
-    function appendField(formData, name, value) {
-      formData.append(name, value);
-    }
+    formEl.addEventListener("submit", async function (ev) {
+      ev.preventDefault();
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Working…";
+      submitMsg.textContent = "";
+      showProgress(true);
 
-    function buildShiftFormData() {
-      const formData = new FormData();
-      const leftSheet = els.leftSheet.value;
-      const rightSheet = els.rightSheet.value;
-      appendField(formData, "file", state.workbookFile);
-      appendField(formData, "input_sheet_name", leftSheet);
-      appendField(formData, "left_sheet_name", leftSheet);
-      appendField(formData, "right_sheet_name", rightSheet);
-      appendField(formData, "output_sheet_name", valueOf("outputSheet") || "Aligned results");
-      appendField(formData, "start_row", valueOf("startRow") || "2");
-      appendField(formData, "header_first_row", valueOf("headerFirst") || "1");
-      appendField(formData, "header_last_row", valueOf("headerLast") || "1");
-      appendField(formData, "left_input_col", upperValue("leftMatch", "D"));
-      appendField(formData, "left_block_start_col", upperValue("leftFrom", "A"));
-      appendField(formData, "left_block_end_col", upperValue("leftTo", "D"));
-      appendField(formData, "left_output_start_col", upperValue("leftFrom", "A"));
-      appendField(formData, "right_input_col", upperValue("rightMatch", "F"));
-      appendField(formData, "right_block_start_col", upperValue("rightFrom", "F"));
-      appendField(formData, "right_block_end_col", upperValue("rightTo", "H"));
-      appendField(formData, "right_output_start_col", upperValue("rightFrom", "F"));
-      appendField(formData, "threshold", valueOf("maxDiff") || "0.5");
-      appendField(formData, "diff_output_col", upperValue("diffCol", "E"));
-      return formData;
-    }
-
-    function setBusy(isBusy) {
-      state.busy = isBusy;
-      els.runPreview.innerHTML = isBusy ? "Shifting..." : shiftButtonIdleHtml;
-      const hasSheets = Boolean(els.leftSheet.value && els.rightSheet.value);
-      els.runPreview.disabled = Boolean(isBusy || !state.workbookFile || !hasSheets);
-    }
-
-    async function runShift() {
-      if (!state.workbookFile || !els.leftSheet.value || !els.rightSheet.value) {
-        updateShiftState();
-        return;
-      }
-      setBusy(true);
-      els.statusLine.textContent = "Processing workbook...";
+      var fd = new FormData(formEl);
       try {
-        const response = await fetch("/process", {
-          method: "POST",
-          body: buildShiftFormData(),
-        });
-        if (!response.ok) {
-          let detail = "";
+        var resp = await fetch(formEl.action, { method: "POST", body: fd });
+
+        if (!resp.ok) {
+          var detail = "";
           try {
-            const errorBody = await response.json();
-            detail = typeof errorBody.detail === "string" ? errorBody.detail : "";
-          } catch (error) {}
-          throw new Error(detail || "Shift failed. Check your sheet and column settings.");
+            var j = await resp.json();
+            if (j && typeof j.detail === "string") detail = j.detail;
+            else if (Array.isArray(j && j.detail) && j.detail[0]) {
+              detail = (j.detail[0].msg || j.detail[0].detail || "").toString();
+            }
+          } catch (ej) {}
+          if (!detail && resp.status === 400) detail = "Check your settings.";
+          throw new Error(detail || "Request failed.");
         }
 
-        const blob = await response.blob();
-        const downloadName = parseFilename(response.headers.get("Content-Disposition"));
-        const runs = response.headers.get("X-Successful-Runs");
-        if (runs) {
-          state.usageRuns = runs;
-          renderMeta();
-        }
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = downloadName;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 3000);
-        els.statusLine.innerHTML = `<strong>${html(downloadName)}</strong> is ready.`;
-      } catch (error) {
-        els.statusLine.textContent = error?.message || "Shift failed.";
+        var hdr = resp.headers.get("X-Successful-Runs");
+        var usageEl = document.getElementById("usage-count");
+        if (hdr && usageEl) usageEl.textContent = hdr;
+        var fname = parseFilename(resp.headers.get("Content-Disposition"));
+
+        // Wait until the whole file arrives in the browser (server has finished generating it).
+        var blob = await resp.blob();
+
+        showProgress(false);
+
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = fname;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+        submitMsg.textContent = "Done — download should start.";
+      } catch (err) {
+        submitMsg.textContent = (err && err.message) ? err.message : "Something went wrong.";
+        showProgress(false);
       } finally {
-        setBusy(false);
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Download";
       }
-    }
-
-    mappingInputs.forEach((input) => {
-      input.addEventListener("input", () => {
-        renderTable();
-        updateShiftState();
-      });
     });
-
-    [els.leftSheet, els.rightSheet].forEach((select) => {
-      select.addEventListener("change", () => {
-        const selectedSheet = state.data.sheets.find((sheet) => sheet.name === select.value);
-        if (selectedSheet) state.activeSheet = selectedSheet;
-        renderAll();
-      });
-    });
-
-    els.workbookFile.addEventListener("change", () => {
-      loadWorkbookFile(els.workbookFile.files && els.workbookFile.files[0]);
-    });
-
-    els.runPreview.addEventListener("click", runShift);
-
-    fetch("/usage")
-      .then((response) => response.json())
-      .then((body) => {
-        state.usageRuns = body.runs;
-        renderMeta();
-      })
-      .catch(() => {});
-
-    renderAll();
+  })();
   </script>
 </body>
 </html>

@@ -428,15 +428,27 @@ def infer_single_sheet_config(ws, config):
 
 def should_try_inferred_single_sheet_config(left_ws, right_ws, config):
     """Limit automatic remapping to same-sheet uploads using the default shape."""
-    return (
-        left_ws is right_ws
-        and config.left_input_col == DEFAULT_LEFT_INPUT_COL
+    modern_default_shape = (
+        config.left_input_col == DEFAULT_LEFT_INPUT_COL
         and config.right_input_col == DEFAULT_RIGHT_INPUT_COL
         and config.left_block_start_col == DEFAULT_LEFT_BLOCK_START_COL
         and config.left_block_end_col == DEFAULT_LEFT_BLOCK_END_COL
         and config.right_block_start_col == DEFAULT_RIGHT_BLOCK_START_COL
         and config.right_block_end_col == DEFAULT_RIGHT_BLOCK_END_COL
         and config.diff_output_col == DEFAULT_DIFF_OUTPUT_COL
+    )
+    legacy_form_default_shape = (
+        config.left_input_col == "F"
+        and config.right_input_col == "H"
+        and config.left_block_start_col == "A"
+        and config.left_block_end_col == "F"
+        and config.right_block_start_col == "H"
+        and config.right_block_end_col == "L"
+        and config.diff_output_col == "G"
+    )
+    return (
+        left_ws is right_ws
+        and (modern_default_shape or legacy_form_default_shape)
     )
 
 
