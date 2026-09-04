@@ -45,6 +45,95 @@ class AlignmentTests(unittest.TestCase):
         gap = next(step for step in alignment if step["right"] is None)
         self.assertEqual(gap["left"]["value"], 517.0)
 
+    def test_process_excel_handles_8874_row_workbook_from_photo_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "correlate-gws-copy.xlsx"
+            output_path = tmp_path / "correlate-gws-copy-shifted.xlsx"
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "sheet1"
+            ws.append([None, "Current", None, None, None, None, None, None, "Previous"])
+            ws.append(
+                [
+                    "Long Seam",
+                    "Pipe Tpe",
+                    "WT",
+                    "Joint #",
+                    "ID",
+                    "Distance [ft]",
+                    "Target Joint Length [ft]",
+                    "Joint Length Dif [ft]",
+                    "Joint Length [ft]",
+                    "Distance [ft]",
+                    "Joint Number",
+                    "WT",
+                    "Pipe Tipe",
+                    "Long seam",
+                    "HCA",
+                ]
+            )
+            for index in range(8872):
+                value = float((index % 113) + 1) + ((index % 7) / 100)
+                right_value = value + (0.1 if index != 4312 else 0.9)
+                ws.append(
+                    [
+                        "LS",
+                        "Type",
+                        0.219,
+                        index + 1,
+                        index + 1000,
+                        index * 2.5,
+                        value,
+                        None,
+                        right_value,
+                        index * 2.5 + 0.2,
+                        index + 1,
+                        0.219,
+                        "Type",
+                        "LS",
+                        "",
+                    ]
+                )
+            wb.save(input_path)
+
+            result = process_excel(
+                input_file=input_path,
+                output_file=output_path,
+                input_sheet_name="sheet1",
+                output_sheet_name="Aligned results",
+                start_row=3,
+                header_first_row=1,
+                header_last_row=2,
+                left_input_col="G",
+                left_block_start_col="A",
+                left_block_end_col="G",
+                left_output_start_col="A",
+                right_input_col="I",
+                right_block_start_col="I",
+                right_block_end_col="O",
+                right_output_start_col="I",
+                threshold=0.5,
+                diff_output_col="H",
+            )
+
+            self.assertEqual(result["left_values"], 8872)
+            self.assertEqual(result["right_values"], 8872)
+            self.assertEqual(result["alignment_steps"], 8873)
+            self.assertEqual(result["matches_written"], 8871)
+
+            out_wb = load_workbook(output_path, read_only=True)
+            out_ws = out_wb["Aligned results"]
+            self.assertEqual(out_ws.max_row, 8875)
+            self.assertEqual(out_ws.max_column, 15)
+            self.assertEqual(out_ws["G2"].value, "Target Joint Length [ft]")
+            self.assertEqual(out_ws["H2"].value, "Abs diff")
+            self.assertEqual(out_ws["I2"].value, "Joint Length [ft]")
+            self.assertEqual(out_ws["G3"].value, 1)
+            self.assertAlmostEqual(out_ws["H3"].value, 0.1)
+            self.assertEqual(out_ws["I3"].value, 1.1)
+
     def test_process_excel_writes_shifted_workbook_from_two_sheets(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
