@@ -34,7 +34,7 @@ MISMATCH_SCORE = -10
 GAP_SCORE = -1
 FULL_DP_CELL_LIMIT = 1_000_000
 MIN_BANDED_MARGIN = 64
-MAX_BANDED_MARGIN = 1024
+MAX_BANDED_MARGIN = 512
 NEG_INF = -10**12
 TRACE_DIAG = 1
 TRACE_UP = 2
@@ -551,7 +551,7 @@ def score_at(scores, row_start, column):
 def choose_alignment_band(left_count, right_count):
     """Pick a wide-enough band for large workbooks that are mostly in order."""
     max_count = max(left_count, right_count)
-    margin = max(MIN_BANDED_MARGIN, max_count // 10)
+    margin = max(MIN_BANDED_MARGIN, max_count // 20)
     margin = min(MAX_BANDED_MARGIN, margin)
     return abs(left_count - right_count) + margin
 
