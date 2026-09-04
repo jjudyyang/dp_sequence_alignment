@@ -32,6 +32,13 @@ DEFAULT_DIFF_OUTPUT_COL = "E"
 MATCH_SCORE = 2
 MISMATCH_SCORE = -10
 GAP_SCORE = -1
+FULL_DP_CELL_LIMIT = 1_000_000
+MIN_BANDED_MARGIN = 64
+MAX_BANDED_MARGIN = 1024
+NEG_INF = -10**12
+TRACE_DIAG = 1
+TRACE_UP = 2
+TRACE_LEFT = 3
 
 UNMATCHED_FILL = PatternFill(fill_type="solid", fgColor="FFF9C4")
 DIFF_ROW_FILL = PatternFill(fill_type="solid", fgColor="FFF4E6")
@@ -464,7 +471,7 @@ def pair_score(left_item, right_item, threshold):
     return MISMATCH_SCORE
 
 
-def align_with_dp(left, right, threshold=DEFAULT_THRESHOLD):
+def align_with_full_dp(left, right, threshold=DEFAULT_THRESHOLD):
     """
     Align two ordered numeric sequences while preserving row order.
 
@@ -531,6 +538,161 @@ def align_with_dp(left, right, threshold=DEFAULT_THRESHOLD):
 
     alignment.reverse()
     return alignment
+
+
+def score_at(scores, row_start, column):
+    """Return a DP score from a sparse band row, or negative infinity."""
+    index = column - row_start
+    if 0 <= index < len(scores):
+        return scores[index]
+    return NEG_INF
+
+
+def choose_alignment_band(left_count, right_count):
+    """Pick a wide-enough band for large workbooks that are mostly in order."""
+    max_count = max(left_count, right_count)
+    margin = max(MIN_BANDED_MARGIN, max_count // 10)
+    margin = min(MAX_BANDED_MARGIN, margin)
+    return abs(left_count - right_count) + margin
+
+
+def trace_direction(diag, up, left_gap, matched):
+    """Use the same tie-break order as the original full-matrix algorithm."""
+    best = max(diag, up, left_gap)
+    if best <= NEG_INF // 2:
+        return best, 0
+    if best == diag and matched:
+        return best, TRACE_DIAG
+    if best == up:
+        return best, TRACE_UP
+    if best == left_gap:
+        return best, TRACE_LEFT
+    return best, TRACE_DIAG
+
+
+def align_with_banded_dp(left, right, threshold=DEFAULT_THRESHOLD, band=None):
+    """
+    Align long ordered sequences without allocating the full n x m matrix.
+
+    The workbook rows are expected to stay mostly in the same order with
+    occasional insertions/deletions, so a band around the diagonal is enough for
+    large customer files while keeping Render memory usage predictable.
+    """
+    n = len(left)
+    m = len(right)
+    band = choose_alignment_band(n, m) if band is None else int(band)
+    band = max(abs(n - m), band)
+
+    prev_start = 0
+    prev_scores = [j * GAP_SCORE for j in range(0, min(m, band) + 1)]
+    row_starts = [0]
+    trace_rows = [bytearray()]
+
+    for i in range(1, n + 1):
+        row_start = max(0, i - band)
+        row_end = min(m, i + band)
+        current_scores = []
+        current_trace = bytearray()
+        left_item = left[i - 1]
+
+        for j in range(row_start, row_end + 1):
+            matched = False
+            diag = NEG_INF
+            if j > 0:
+                right_item = right[j - 1]
+                matched = is_match(left_item["value"], right_item["value"], threshold)
+                prev_diag = score_at(prev_scores, prev_start, j - 1)
+                if prev_diag > NEG_INF // 2:
+                    diag = prev_diag + (MATCH_SCORE if matched else MISMATCH_SCORE)
+
+            prev_up = score_at(prev_scores, prev_start, j)
+            up = prev_up + GAP_SCORE if prev_up > NEG_INF // 2 else NEG_INF
+
+            if j > row_start:
+                previous_current = current_scores[-1]
+                left_gap = (
+                    previous_current + GAP_SCORE
+                    if previous_current > NEG_INF // 2
+                    else NEG_INF
+                )
+            else:
+                left_gap = NEG_INF
+
+            best, direction = trace_direction(diag, up, left_gap, matched)
+            current_scores.append(best)
+            current_trace.append(direction)
+
+        row_starts.append(row_start)
+        trace_rows.append(current_trace)
+        prev_start = row_start
+        prev_scores = current_scores
+
+    if score_at(prev_scores, prev_start, m) <= NEG_INF // 2:
+        raise ValueError(
+            "This workbook needs a wider alignment window. Try splitting the file "
+            "into smaller sections and running each section separately."
+        )
+
+    alignment = []
+    i = n
+    j = m
+    while i > 0 or j > 0:
+        if i == 0:
+            alignment.append({"left": None, "right": right[j - 1], "matched": False})
+            j -= 1
+            continue
+        if j == 0:
+            alignment.append({"left": left[i - 1], "right": None, "matched": False})
+            i -= 1
+            continue
+
+        row_start = row_starts[i]
+        trace_index = j - row_start
+        if trace_index < 0 or trace_index >= len(trace_rows[i]):
+            raise ValueError(
+                "This workbook needs a wider alignment window. Try splitting the "
+                "file into smaller sections and running each section separately."
+            )
+
+        direction = trace_rows[i][trace_index]
+        if direction == TRACE_DIAG:
+            left_item = left[i - 1]
+            right_item = right[j - 1]
+            alignment.append(
+                {
+                    "left": left_item,
+                    "right": right_item,
+                    "matched": is_match(left_item["value"], right_item["value"], threshold),
+                }
+            )
+            i -= 1
+            j -= 1
+        elif direction == TRACE_UP:
+            alignment.append({"left": left[i - 1], "right": None, "matched": False})
+            i -= 1
+        elif direction == TRACE_LEFT:
+            alignment.append({"left": None, "right": right[j - 1], "matched": False})
+            j -= 1
+        else:
+            raise ValueError(
+                "This workbook needs a wider alignment window. Try splitting the "
+                "file into smaller sections and running each section separately."
+            )
+
+    alignment.reverse()
+    return alignment
+
+
+def align_with_dp(left, right, threshold=DEFAULT_THRESHOLD):
+    """
+    Align two ordered numeric sequences while preserving row order.
+
+    Small files use the original exact full-matrix DP. Larger customer uploads
+    use a banded DP so thousands of rows can complete on the live Render site.
+    """
+    if len(left) * len(right) <= FULL_DP_CELL_LIMIT:
+        return align_with_full_dp(left, right, threshold)
+    return align_with_banded_dp(left, right, threshold)
 
 
 def create_output_sheet(workbook, left_ws, right_ws, config):

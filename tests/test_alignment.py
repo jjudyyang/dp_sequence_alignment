@@ -29,6 +29,22 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(alignment[2]["left"]["value"], 30.0)
         self.assertEqual(alignment[2]["right"]["value"], 30.2)
 
+    def test_large_alignment_uses_scalable_banded_path(self):
+        left = [{"row": index + 3, "value": float(index)} for index in range(1200)]
+        right = [
+            {"row": index + 3, "value": float(index)}
+            for index in range(1200)
+            if index != 517
+        ]
+
+        alignment = align_with_dp(left, right, threshold=0.01)
+
+        self.assertEqual(len(alignment), 1200)
+        self.assertEqual(sum(1 for step in alignment if step["matched"]), 1199)
+
+        gap = next(step for step in alignment if step["right"] is None)
+        self.assertEqual(gap["left"]["value"], 517.0)
+
     def test_process_excel_writes_shifted_workbook_from_two_sheets(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
