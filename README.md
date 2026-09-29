@@ -34,6 +34,78 @@ Analysts spend hours going through runs, manually shifting entire columns, and r
 - shift!
 - download
 
+## Large workbooks (up to 10,000 data rows)
+
+The default **Automatic** mode keeps a direct download for small workbooks. Above
+1,000 data rows, above 2 MB, or when **Large workbook** is selected, the upload
+returns a job identifier and the browser polls for progress. A quick job that
+takes more than four seconds also switches to polling without uploading again.
+The upload meter measures bytes sent; processing shows actual stages rather than
+an estimated percentage. The result is an explicit, retryable download link.
+
+- The server enforces **10,000 data rows per selected input sheet**, excluding
+  headers. Interior blank rows count toward the row span; formatting-only trailing
+  rows do not. The aligned output may have more rows because alignment inserts gaps.
+  Files over the limit are rejected, never silently truncated.
+- The XLSX file limit is **25 MB**. Additional limits keep unusual files from
+  exhausting a small server: 80 MB expanded XLSX contents, 400,000 stored cells
+  across the whole workbook, and 64 columns across the two copied blocks.
+- Only **one workbook process** runs at once, with at most two additional accepted
+  uploads/jobs waiting. Extra submissions receive a retryable busy message.
+  CPU work and workbook memory live in a disposable child process, not in the
+  web server. On Linux the child is limited to 384 MB of address space; jobs have
+  a ten-minute deadline. Excess formatting or very wide files may need simplifying
+  even if they are below the row limit.
+- Refreshing the same browser tab resumes status checks using its saved job ID.
+  A dropped response is checked before retrying an upload. Duplicate upload IDs
+  reuse the existing job. If sign-in expires, sign in again in the same tab.
+- Inputs are removed after completion/failure. Results expire after one hour;
+  admission pauses when retained workbook files exceed 256 MB. Cleanup runs every
+  minute. Job routes and downloads use the existing password gate.
+- The preview reads only 45 rows in a browser worker and is skipped above 5 MB.
+  Preview failure never prevents uploading.
+
+### Run and deploy
+
+Use a **single Render instance with one Uvicorn worker**, matching the existing
+deployment. No Redis, external queue, or new paid service is required:
+
+```sh
+pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port "$PORT" --workers 1
+```
+
+The job supervisor uses an OS file lock to reject multiple web workers sharing a
+job directory (Linux/macOS). `/healthz` is a public, constant health response;
+configure it as Render's health check path. All workbook routes remain protected.
+`SHIFTLINE_DATA_DIR` can relocate the usage database and temporary jobs directory.
+Use a persistent `SHIFTLINE_AUTH_SECRET` if login cookies should survive restarts.
+
+This lightweight queue **does not promise survival across Render restarts or
+free-instance sleep**. With retained files, interrupted jobs become explicit
+failures on startup; with Render's ephemeral filesystem, the browser reports
+that the job is unavailable and requests a fresh upload. Download completed
+results promptly. Multiple instances or durable jobs would require shared
+storage and an external queue.
+
+### Validation
+
+```sh
+pip install -r requirements-dev.txt
+python -m unittest discover -s tests -v
+```
+
+The generated 10,000-row fixture includes styles, formulas, and missing/extra
+matches. Tests upload it through the HTTP API, poll health while it runs, download
+the result, and verify row order, formulas, styles, and untouched source sheets.
+Boundary, authentication, duplicate-submission, timeout, queue, restart, and
+expiration tests accompany it. Linux CI also exercises the worker memory cap.
+
+For a deployment smoke test, upload a 10,000-row workbook, confirm the upload
+returns `202`, refresh during processing, and download the completed result.
+Then verify that 10,001 data rows produces the limit message. The logs include
+job IDs, row counts, and Render request IDs, without workbook contents.
+
 ## the algorithm
 
 each selected columns is a ordered numeric sequences.

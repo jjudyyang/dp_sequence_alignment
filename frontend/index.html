@@ -12,7 +12,7 @@
     h1 { font-size: 1.25rem; margin: 0 0 16px; font-weight: 600; }
     form { display: flex; flex-direction: column; gap: 14px; }
     label { display: block; font-size: 0.8rem; color: #444; margin-bottom: 4px; }
-    input[type="text"], input[type="number"], input[type="file"] {
+    select, input[type="text"], input[type="number"], input[type="file"] {
       width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 15px;
     }
     input::placeholder { color: #9ca3af; }
@@ -48,55 +48,33 @@
     .preview-holder .row-num { background: #f3f4f6; text-align: right; }
     .preview-holder tr:nth-child(even) td { background: #f0f0f0; }
     .usage-foot { font-size: 0.8rem; color: #6b7280; margin-top: 28px; padding-top: 16px; border-top: 1px solid #eee; }
-    #progress-overlay {
-      display: none; position: fixed; inset: 0; z-index: 100;
-      align-items: center; justify-content: center;
-      background: rgba(0,0,0,0.4);
-      flex-direction: column;
-    }
-    #progress-overlay.is-visible { display: flex; }
-    .progress-modal {
-      background: #fff; border-radius: 12px; padding: 22px 24px;
-      box-shadow: 0 12px 40px rgba(0,0,0,0.15); max-width: 22rem; width: 90%;
-    }
-    .progress-modal h2 {
-      margin: 0 0 8px; font-size: 1.05rem; font-weight: 600; color: #111827;
-    }
-    .progress-modal .progress-sub { margin: 0 0 14px; font-size: 0.82rem; color: #6b7280; line-height: 1.35; }
-    .progress-track {
-      height: 11px; border-radius: 6px; background: #e5e7eb;
-      overflow: hidden; margin-bottom: 8px;
-    }
-    .progress-bar-indet {
-      height: 100%; width: 45%;
-      border-radius: 6px;
-      background: linear-gradient(90deg, #93c5fd, #2563eb, #93c5fd);
-      animation: prog-slide 1.35s infinite ease-in-out;
-    }
-    @keyframes prog-slide {
-      0% { transform: translateX(-120%); }
-      100% { transform: translateX(280%); }
-    }
-    .progress-hint { font-size: 0.78rem; color: #9ca3af; margin: 0; }
+    .limits-note { font-size: 0.85rem; color: #555; margin: -5px 0 20px; }
+    #job-panel { margin-top: 18px; border: 1px solid #bfdbfe; background: #eff6ff; padding: 18px; border-radius: 8px; }
+    #job-panel h2 { font-size: 1rem; margin: 0 0 8px; }
+    #job-stage { margin: 8px 0; }
+    #job-progress { width: 100%; height: 16px; }
+    #job-download, #job-login { display: inline-block; margin-top: 12px; font-weight: 600; }
+    #job-retry { margin-top: 12px; padding: 8px; }
+    [hidden] { display: none !important; }
   </style>
 </head>
 <body>
-  <div id="progress-overlay" role="dialog" aria-modal="true" aria-labelledby="prog-title" aria-hidden="true">
-    <div class="progress-modal">
-      <h2 id="prog-title">Working on your file…</h2>
-      <p class="progress-sub">We can’t estimate time—it depends on file size. Please keep this tab open.</p>
-      <div class="progress-track"><div class="progress-bar-indet"></div></div>
-      <p class="progress-hint">Indeterminate progress (processing on the server)</p>
-    </div>
-  </div>
-
   <h1>Align spreadsheet</h1>
+  <p class="limits-note">Up to 10,000 data rows per input sheet, plus headers · .xlsx · 25 MB maximum</p>
   <form id="align-form" action="/process" method="post" enctype="multipart/form-data">
     <div>
       <label for="file">File</label>
       <input id="file" type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
       <p id="preview-msg" class="preview-msg"></p>
       <div id="preview-holder" class="preview-holder"></div>
+    </div>
+    <div>
+      <label for="workflow">Processing</label>
+      <select id="workflow" name="workflow">
+        <option value="auto">Automatic — choose the right workflow for my file</option>
+        <option value="large">Large workbook — upload, track progress, then download</option>
+      </select>
+      <p class="preview-msg">Files over 1,000 data rows automatically use the large-workbook workflow.</p>
     </div>
     <div class="inline2">
       <div>
@@ -185,226 +163,15 @@
 
   <p class="usage-foot">Successful runs: <strong id="usage-count">__USAGE_COUNT__</strong></p>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" crossorigin="anonymous"></script>
-  <script>
-  (function () {
-    var fileEl = document.getElementById("file");
-    var sheetNameEl = document.getElementById("input_sheet_name");
-    var previewMsg = document.getElementById("preview-msg");
-    var previewHolder = document.getElementById("preview-holder");
-    var MAX_R = 45;
-    var MAX_C = 16;
-
-    function pickSheet(wb, name) {
-      var names = wb.SheetNames;
-      if (!name) return names[0];
-      if (names.indexOf(name) >= 0) return name;
-      var lower = name.toLowerCase();
-      for (var i = 0; i < names.length; i++) {
-        if (names[i].toLowerCase() === lower) return names[i];
-      }
-      return names[0];
-    }
-
-    function toColLabel(idx) {
-      var n = idx + 1;
-      var s = "";
-      while (n > 0) {
-        var rem = (n - 1) % 26;
-        s = String.fromCharCode(65 + rem) + s;
-        n = Math.floor((n - 1) / 26);
-      }
-      return s;
-    }
-
-    function renderPreview(wb, sheetName) {
-      var ws = wb.Sheets[sheetName];
-      if (!ws) {
-        previewMsg.textContent = "Preview: sheet not found.";
-        previewHolder.innerHTML = "";
-        return;
-      }
-      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
-      var table = document.createElement("table");
-      var thead = document.createElement("thead");
-      var tbody = document.createElement("tbody");
-      var rowCount = Math.min(rows.length, MAX_R);
-      var maxCols = 0;
-      for (var i = 0; i < rowCount; i++) {
-        maxCols = Math.max(maxCols, (rows[i] || []).length);
-      }
-      var colCount = Math.min(Math.max(maxCols, 1), MAX_C);
-
-      var headTr = document.createElement("tr");
-      var corner = document.createElement("th");
-      corner.textContent = "#";
-      headTr.appendChild(corner);
-      for (var hc = 0; hc < colCount; hc++) {
-        var h = document.createElement("th");
-        h.textContent = toColLabel(hc);
-        headTr.appendChild(h);
-      }
-      thead.appendChild(headTr);
-
-      for (var r = 0; r < rowCount; r++) {
-        var tr = document.createElement("tr");
-        var rowHead = document.createElement("th");
-        rowHead.className = "row-num";
-        rowHead.textContent = String(r + 1);
-        tr.appendChild(rowHead);
-        var row = rows[r] || [];
-        for (var c = 0; c < colCount; c++) {
-          var td = document.createElement("td");
-          var v = row[c];
-          td.textContent = v == null ? "" : String(v);
-          tr.appendChild(td);
-        }
-        tbody.appendChild(tr);
-      }
-      table.appendChild(thead);
-      table.appendChild(tbody);
-      previewHolder.innerHTML = "";
-      previewHolder.appendChild(table);
-      var note = rows.length > MAX_R ? " (first " + MAX_R + " of " + rows.length + " rows)" : "";
-      previewMsg.textContent = "Preview · " + sheetName + note;
-    }
-
-    var cachedWB = null;
-
-    /** Re-read Excel from disk (slow). Only do this when the user picks a new file. */
-    function parseFileAndCache(cb) {
-      cachedWB = null;
-      previewMsg.textContent = "";
-      previewHolder.innerHTML = "";
-      var f = fileEl.files && fileEl.files[0];
-      if (!f) return;
-      if (typeof XLSX === "undefined") {
-        previewMsg.textContent = "Preview unavailable (spreadsheet parser did not load).";
-        return;
-      }
-      var reader = new FileReader();
-      reader.onload = function (e) {
-        try {
-          cachedWB = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
-          if (typeof cb === "function") cb();
-          else redrawPreviewOnly();
-        } catch (err) {
-          previewMsg.textContent = "Could not preview this file.";
-          previewHolder.innerHTML = "";
-          cachedWB = null;
-        }
-      };
-      reader.readAsArrayBuffer(f);
-    }
-
-    /** Cheap: reuse parsed workbook — only Sheet in text changes (no glitch while typing). */
-    function redrawPreviewOnly() {
-      if (!cachedWB) return;
-      try {
-        var name = pickSheet(cachedWB, (sheetNameEl.value || "").trim());
-        renderPreview(cachedWB, name);
-      } catch (err) {
-        previewMsg.textContent = "Could not update preview.";
-        previewHolder.innerHTML = "";
-      }
-    }
-
-    var sheetDeb = null;
-
-    function scheduleSheetRedraw() {
-      if (sheetDeb) window.clearTimeout(sheetDeb);
-      sheetDeb = window.setTimeout(function () {
-        sheetDeb = null;
-        redrawPreviewOnly();
-      }, 380);
-    }
-
-    fileEl.addEventListener("change", function () {
-      parseFileAndCache();
-    });
-    sheetNameEl.addEventListener("input", function () {
-      if (fileEl.files && fileEl.files[0] && cachedWB) scheduleSheetRedraw();
-    });
-
-    var formEl = document.getElementById("align-form");
-    var submitBtn = document.getElementById("submit-btn");
-    var submitMsg = document.getElementById("submit-msg");
-    var progOverlay = document.getElementById("progress-overlay");
-
-    function showProgress(show) {
-      progOverlay.classList.toggle("is-visible", !!show);
-      progOverlay.setAttribute("aria-hidden", show ? "false" : "true");
-    }
-
-    function parseFilename(cd) {
-      if (!cd) return "shifted_output.xlsx";
-      var low = cd.toLowerCase();
-      var mime = low.indexOf("filename*=utf-8''");
-      if (mime >= 0) {
-        var rest = cd.slice(mime + 17).trim();
-        var end = rest.indexOf(";");
-        var encoded = end >= 0 ? rest.slice(0, end).trim() : rest;
-        try { return decodeURIComponent(encoded); } catch (e2) {}
-      }
-      var dq = cd.match(/filename="([^"]+)"/i);
-      if (dq && dq[1]) return dq[1];
-      var fq = cd.match(/filename=([^;\s]+)/i);
-      if (fq && fq[1]) return fq[1].replace(/^["']|["']$/g, "").trim();
-      return "shifted_output.xlsx";
-    }
-
-    formEl.addEventListener("submit", async function (ev) {
-      ev.preventDefault();
-      submitBtn.disabled = true;
-      submitBtn.textContent = "Working…";
-      submitMsg.textContent = "";
-      showProgress(true);
-
-      var fd = new FormData(formEl);
-      try {
-        var resp = await fetch(formEl.action, { method: "POST", body: fd });
-
-        if (!resp.ok) {
-          var detail = "";
-          try {
-            var j = await resp.json();
-            if (j && typeof j.detail === "string") detail = j.detail;
-            else if (Array.isArray(j && j.detail) && j.detail[0]) {
-              detail = (j.detail[0].msg || j.detail[0].detail || "").toString();
-            }
-          } catch (ej) {}
-          if (!detail && resp.status === 400) detail = "Check your settings.";
-          throw new Error(detail || "Request failed.");
-        }
-
-        var hdr = resp.headers.get("X-Successful-Runs");
-        var usageEl = document.getElementById("usage-count");
-        if (hdr && usageEl) usageEl.textContent = hdr;
-        var fname = parseFilename(resp.headers.get("Content-Disposition"));
-
-        // Wait until the whole file arrives in the browser (server has finished generating it).
-        var blob = await resp.blob();
-
-        showProgress(false);
-
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement("a");
-        a.href = url;
-        a.download = fname;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
-        submitMsg.textContent = "Done — download should start.";
-      } catch (err) {
-        submitMsg.textContent = (err && err.message) ? err.message : "Something went wrong.";
-        showProgress(false);
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = "Download";
-      }
-    });
-  })();
-  </script>
+  <section id="job-panel" hidden aria-labelledby="job-heading">
+    <h2 id="job-heading">Workbook progress</h2>
+    <p id="job-stage" role="status" aria-live="polite"></p>
+    <progress id="job-progress" max="100" aria-label="Workbook progress"></progress>
+    <p id="job-hint" class="preview-msg"></p>
+    <a id="job-download" hidden>Download aligned workbook</a>
+    <button id="job-retry" type="button" hidden>Check progress again</button>
+    <a id="job-login" href="/login" hidden>Sign in to check your workbook</a>
+  </section>
+  <script src="/assets/app.js" defer></script>
 </body>
 </html>

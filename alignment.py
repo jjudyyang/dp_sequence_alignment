@@ -2,10 +2,13 @@
 
 from copy import copy
 from dataclasses import dataclass
+from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 from openpyxl.utils import column_index_from_string, get_column_letter
+
+from workbook_limits import MAX_DATA_ROWS, inspect_workbook, validate_settings
 
 
 DEFAULT_INPUT_FILE = "input.xlsx"
@@ -287,12 +290,9 @@ def copy_cell(src_cell, dst_cell):
     """Copy an Excel cell value and visual style."""
     dst_cell.value = src_cell.value
     if src_cell.has_style:
-        dst_cell.font = copy(src_cell.font)
-        dst_cell.fill = copy(src_cell.fill)
-        dst_cell.border = copy(src_cell.border)
-        dst_cell.alignment = copy(src_cell.alignment)
-        dst_cell.number_format = src_cell.number_format
-        dst_cell.protection = copy(src_cell.protection)
+        # Both cells belong to the same workbook, so their style indexes are shared.
+        # Copying one StyleArray avoids rebuilding six immutable style objects per cell.
+        dst_cell._style = copy(src_cell._style)
 
 
 def copy_block(src_ws, dst_ws, src_row, dst_row, src_start_col, src_end_col, dst_start_col):
@@ -329,7 +329,8 @@ def highlight_block(ws, row, start_col, end_col, fill):
 def read_column(ws, col_letter, start_row):
     """Read one matching column into row/value records used by the DP engine."""
     rows = []
-    for row in range(start_row, ws.max_row + 1):
+    # Formatting-only cells can make max_row enormous; preflight checks real data.
+    for row in range(start_row, min(ws.max_row + 1, start_row + MAX_DATA_ROWS)):
         value = to_float(ws[f"{col_letter}{row}"].value)
         if value is not None:
             rows.append({"row": row, "value": value})
@@ -570,7 +571,7 @@ def trace_direction(diag, up, left_gap, matched):
     return best, TRACE_DIAG
 
 
-def align_with_banded_dp(left, right, threshold=DEFAULT_THRESHOLD, band=None):
+def align_with_banded_dp(left, right, threshold=DEFAULT_THRESHOLD, band=None, progress=None):
     """
     Align long ordered sequences without allocating the full n x m matrix.
 
@@ -589,6 +590,8 @@ def align_with_banded_dp(left, right, threshold=DEFAULT_THRESHOLD, band=None):
     trace_rows = [bytearray()]
 
     for i in range(1, n + 1):
+        if progress and i % 250 == 0:
+            progress(f"Aligning rows ({i:,} of {n:,})")
         row_start = max(0, i - band)
         row_end = min(m, i + band)
         current_scores = []
@@ -683,7 +686,7 @@ def align_with_banded_dp(left, right, threshold=DEFAULT_THRESHOLD, band=None):
     return alignment
 
 
-def align_with_dp(left, right, threshold=DEFAULT_THRESHOLD):
+def align_with_dp(left, right, threshold=DEFAULT_THRESHOLD, progress=None):
     """
     Align two ordered numeric sequences while preserving row order.
 
@@ -692,7 +695,7 @@ def align_with_dp(left, right, threshold=DEFAULT_THRESHOLD):
     """
     if len(left) * len(right) <= FULL_DP_CELL_LIMIT:
         return align_with_full_dp(left, right, threshold)
-    return align_with_banded_dp(left, right, threshold)
+    return align_with_banded_dp(left, right, threshold, progress=progress)
 
 
 def create_output_sheet(workbook, left_ws, right_ws, config):
@@ -750,10 +753,12 @@ def highlight_mapped_block(ws, row, output_start_col, block_start_col, block_end
     )
 
 
-def write_alignment(left_ws, right_ws, out_ws, alignment, config):
+def write_alignment(left_ws, right_ws, out_ws, alignment, config, progress=None):
     """Write aligned row blocks into the output worksheet."""
     output_row = config.start_row
     for step in alignment:
+        if progress and (output_row - config.start_row) % 500 == 0:
+            progress(f"Writing aligned rows ({output_row - config.start_row:,} of {len(alignment):,})")
         left_item = step["left"]
         right_item = step["right"]
         matched = step["matched"]
@@ -843,6 +848,7 @@ def process_excel(
     threshold=DEFAULT_THRESHOLD,
     diff_output_col=DEFAULT_DIFF_OUTPUT_COL,
     verbose=False,
+    progress=None,
 ):
     """Align two spreadsheet sequences and save a new workbook."""
     config = AlignmentConfig(
@@ -865,6 +871,10 @@ def process_excel(
         diff_output_col=diff_output_col,
     )
 
+    report = progress or (lambda stage: None)
+    report("Checking workbook limits")
+    inspect_workbook(Path(input_file), config)
+    report("Reading workbook")
     workbook = load_workbook(input_file)
     left_ws = resolve_sheet(workbook, config.left_sheet_name or config.input_sheet_name)
     right_ws = resolve_sheet(
@@ -881,6 +891,8 @@ def process_excel(
         inferred_config = infer_single_sheet_config(left_ws, config)
         if inferred_config is not None:
             config = inferred_config
+            validate_settings(config)
+            inspect_workbook(Path(input_file), config)
             left_values = read_column(left_ws, config.left_input_col, config.start_row)
             right_values = read_column(right_ws, config.right_input_col, config.start_row)
     require_match_values(
@@ -889,12 +901,16 @@ def process_excel(
     require_match_values(
         right_values, right_ws, config.right_input_col, "right", config.start_row
     )
-    alignment = align_with_dp(left_values, right_values, config.threshold)
+    report("Aligning rows")
+    alignment = align_with_dp(left_values, right_values, config.threshold, progress=progress)
 
     out_ws = create_output_sheet(workbook, left_ws, right_ws, config)
-    write_alignment(left_ws, right_ws, out_ws, alignment, config)
+    report("Copying values and formatting")
+    write_alignment(left_ws, right_ws, out_ws, alignment, config, progress=progress)
     write_difference_column(out_ws, alignment, config)
+    report("Saving your download")
     workbook.save(output_file)
+    workbook.close()
 
     result = {
         "output_file": str(output_file),
